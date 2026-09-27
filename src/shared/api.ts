@@ -1,7 +1,7 @@
 export type Config = {
-  type: 'cost' | 'percentage';
+  type: 'percentage' | 'cost' | 'count';
   text: string;
-  imageUrl?: string;
+  imageUrl?: string | undefined;
   min: number;
   max: number;
   answer: number;

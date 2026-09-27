@@ -148,7 +148,13 @@ api.post('/create-game', async (c) => {
   const config = await c.req.json<CreateGameRequest>();
   
   try {
-    const formattedTitle = `Gimme a Ballpark for the ${config.type === 'percentage' ? 'percentage of ' : 'cost of '}${config.text}`;
+    let titlePrefix = 'how many ';
+    if (config.type === 'percentage') {
+      titlePrefix = 'the percentage of ';
+    } else if (config.type === 'cost') {
+      titlePrefix = 'the cost of ';
+    }
+    const formattedTitle = `Gimme a Ballpark for ${titlePrefix}${config.text}`;
 
     const newPost = await reddit.submitCustomPost({
       title: formattedTitle,
