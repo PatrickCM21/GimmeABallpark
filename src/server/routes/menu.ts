@@ -11,12 +11,21 @@ menu.post('/hub-create', async (c) => {
       subredditName: context.subredditName,
     });
     
-    // Mark this post as a Hub
-    await redis.set(`post:${post.id}:isHub`, 'true');
+    const cleanId = post.id.replace('t3_', '');
+    const idWithPrefix = `t3_${cleanId}`;
+
+    // Mark post as a Hub across all possible key representations
+    await Promise.all([
+      redis.set(`post:${post.id}:isHub`, 'true'),
+      redis.set(`post:${cleanId}:isHub`, 'true'),
+      redis.set(`post:${idWithPrefix}:isHub`, 'true'),
+    ]);
+
+    const targetUrl = post.url || (post.permalink ? `https://reddit.com${post.permalink}` : `https://reddit.com/r/${context.subredditName}/comments/${cleanId}`);
 
     return c.json<UiResponse>(
       {
-        navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${post.id}`,
+        navigateTo: targetUrl,
       },
       200
     );

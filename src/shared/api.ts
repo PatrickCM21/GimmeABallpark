@@ -24,6 +24,7 @@ export type CreateGameRequest = Config;
 export type CreateGameResponse = {
   success: boolean;
   postId?: string;
+  postUrl?: string;
   error?: string;
 };
 
