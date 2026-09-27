@@ -6,10 +6,7 @@
     "entrypoints": {
       "default": {
         "inline": true,
-        "entry": "splash.html"
-      },
-      "game": {
-        "entry": "game.html"
+        "entry": "index.html"
       }
     }
   },
@@ -20,11 +17,11 @@
   "menu": {
     "items": [
       {
-        "label": "Create Ballpark Game",
-        "description": "Create a new Gimme a Ballpark game post",
+        "label": "Create Game Hub",
+        "description": "Create a Hub post where users can create Gimme a Ballpark games",
         "location": "subreddit",
         "forUserType": "moderator",
-        "endpoint": "/internal/menu/post-create"
+        "endpoint": "/internal/menu/hub-create"
       }
     ]
   },

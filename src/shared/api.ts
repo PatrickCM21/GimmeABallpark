@@ -8,8 +8,8 @@ export type Config = {
 };
 
 export type GameDataResponse = {
+  isHub: boolean;
   configured: boolean;
-  isAuthor: boolean;
   config?: Config;
   userGuess?: number;
   stats?: {
@@ -19,10 +19,12 @@ export type GameDataResponse = {
   };
 };
 
-export type SaveConfigRequest = Config;
+export type CreateGameRequest = Config;
 
-export type SaveConfigResponse = {
+export type CreateGameResponse = {
   success: boolean;
+  postId?: string;
+  error?: string;
 };
 
 export type GuessRequest = {
