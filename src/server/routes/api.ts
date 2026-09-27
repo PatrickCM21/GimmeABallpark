@@ -156,19 +156,38 @@ api.post('/create-game', async (c) => {
     }
     const formattedTitle = `Gimme a Ballpark for ${titlePrefix}${config.text}`;
 
+    let authorName = config.authorName;
+    let authorAvatarUrl = config.authorAvatarUrl;
+    try {
+      if (!authorName) {
+        authorName = await reddit.getCurrentUsername();
+      }
+      if (authorName && !authorAvatarUrl) {
+        authorAvatarUrl = await reddit.getSnoovatarUrl(authorName);
+      }
+    } catch (e) {
+      console.warn("Could not retrieve author avatar:", e);
+    }
+
+    const fullConfig: Config = {
+      ...config,
+      authorName: authorName || 'Redditor',
+      authorAvatarUrl,
+    };
+
     const newPost = await reddit.submitCustomPost({
       title: formattedTitle,
       subredditName: subredditName!,
-      postData: config,
+      postData: fullConfig,
     });
 
     const newCleanId = newPost.id.replace('t3_', '');
     const newIdWithPrefix = `t3_${newCleanId}`;
 
     await Promise.all([
-      redis.set(`post:${newPost.id}:config`, JSON.stringify(config)),
-      redis.set(`post:${newCleanId}:config`, JSON.stringify(config)),
-      redis.set(`post:${newIdWithPrefix}:config`, JSON.stringify(config)),
+      redis.set(`post:${newPost.id}:config`, JSON.stringify(fullConfig)),
+      redis.set(`post:${newCleanId}:config`, JSON.stringify(fullConfig)),
+      redis.set(`post:${newIdWithPrefix}:config`, JSON.stringify(fullConfig)),
     ]);
 
     const targetUrl = newPost.url || (newPost.permalink ? `https://reddit.com${newPost.permalink}` : `https://reddit.com/r/${subredditName}/comments/${newCleanId}`);

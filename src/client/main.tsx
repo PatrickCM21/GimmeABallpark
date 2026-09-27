@@ -1,5 +1,5 @@
 import './index.css';
-import { StrictMode, useEffect, useState } from 'react';
+import { StrictMode, useEffect, useState, type ChangeEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
 import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse } from '../shared/api';
@@ -69,6 +69,7 @@ export const App = () => {
   // Hub Setup state
   const [type, setType] = useState<'percentage' | 'cost' | 'count'>('percentage');
   const [text, setText] = useState('');
+  const [imageMode, setImageMode] = useState<'upload' | 'link'>('upload');
   const [imageUrl, setImageUrl] = useState('');
   const [min, setMin] = useState(0);
   const [max, setMax] = useState(100);
@@ -101,19 +102,51 @@ export const App = () => {
   const fullTitlePrefix = `Gimme a Ballpark for ${getTitlePrefix(type)}`;
   const maxSubjectLength = Math.max(50, 300 - fullTitlePrefix.length);
 
+  const previewTitle = `Gimme a Ballpark for ${getTitlePrefix(type)}${text.trim() || '[subject]'}`;
+
+  const getPreviewTitleClass = (len: number) => {
+    if (len < 35) return 'text-base sm:text-lg';
+    if (len < 70) return 'text-sm sm:text-base';
+    if (len < 120) return 'text-xs sm:text-sm';
+    return 'text-[11px] leading-tight';
+  };
+
+  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Please choose an image under 2MB!');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Clamp answer between min and max
+  const handleAnswerChange = (val: number) => {
+    setAnswer(val);
+  };
+
+  const clampAnswerToRange = (val: number, curMin: number, curMax: number) => {
+    return Math.max(curMin, Math.min(curMax, val));
+  };
+
   const handleCreateSubmit = async () => {
     if (!text.trim()) {
       alert('Please enter a question subject!');
       return;
     }
     if (min >= max) {
-      alert('Min value must be less than max value!');
+      alert('Min guess must be less than max guess!');
       return;
     }
-    if (answer < min || answer > max) {
-      alert(`The real answer (${answer}) must be between min (${min}) and max (${max})!`);
-      return;
-    }
+
+    const finalAnswer = clampAnswerToRange(answer, min, max);
 
     setIsCreating(true);
     try {
@@ -123,7 +156,7 @@ export const App = () => {
         imageUrl: imageUrl.trim() || undefined,
         min,
         max,
-        answer,
+        answer: finalAnswer,
       });
       if (res.success && res.postUrl) {
         navigateTo(res.postUrl);
@@ -152,11 +185,11 @@ export const App = () => {
     }
   };
 
-  // --- 1. FULL-SCREEN ERROR STATE (DARK BLUE) ---
+  // --- 1. FULL-SCREEN ERROR STATE (PURPLE) ---
   if (error) {
     return (
-      <div className="h-full w-full min-h-screen bg-[#0b1528] flex flex-col items-center justify-center p-4 text-center select-none">
-        <div className="bg-white rounded-2xl shadow-2xl border-4 border-slate-900 p-6 max-w-sm w-full">
+      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
+        <div className="bg-white rounded-2xl shadow-2xl border-4 border-indigo-950 p-6 max-w-sm w-full">
           <p className="text-xl font-black uppercase text-red-600 mb-2">Error</p>
           <p className="font-semibold text-gray-700 text-sm mb-4 break-words">{error}</p>
           <button
@@ -166,7 +199,7 @@ export const App = () => {
                 .then(setData)
                 .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Unknown error'));
             }}
-            className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-black py-2.5 px-6 rounded-full border-b-4 border-amber-600 active:translate-y-0.5 uppercase tracking-wide text-sm cursor-pointer transition-transform"
+            className="bg-yellow-400 hover:bg-yellow-300 text-indigo-950 font-black py-2.5 px-6 rounded-full border-b-4 border-yellow-600 active:translate-y-0.5 uppercase tracking-wide text-sm cursor-pointer transition-transform"
           >
             Retry
           </button>
@@ -175,40 +208,45 @@ export const App = () => {
     );
   }
 
-  // --- 2. FULL-SCREEN LOADING STATE (DARK BLUE) ---
+  // --- 2. FULL-SCREEN LOADING STATE (PURPLE) ---
   if (!data) {
     return (
-      <div className="h-full w-full min-h-screen bg-[#0b1528] flex flex-col items-center justify-center p-4 text-center select-none">
-        <div className="bg-white rounded-2xl shadow-2xl border-4 border-slate-900 p-8 max-w-sm w-full animate-pulse">
-          <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-1">Gimme a Ballpark</p>
-          <h2 className="text-2xl font-black uppercase text-slate-900 mb-5">Loading Game...</h2>
-          <div className="w-12 h-12 border-4 border-amber-400 border-t-blue-900 rounded-full animate-spin mx-auto" />
+      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
+        <div className="bg-white rounded-2xl shadow-2xl border-4 border-indigo-950 p-8 max-w-sm w-full animate-pulse">
+          <p className="text-xs font-black text-purple-600 uppercase tracking-widest mb-1">Gimme a Ballpark</p>
+          <h2 className="text-2xl font-black uppercase text-indigo-950 mb-5">Loading Game...</h2>
+          <div className="w-12 h-12 border-4 border-yellow-400 border-t-indigo-900 rounded-full animate-spin mx-auto" />
         </div>
       </div>
     );
   }
 
-  // --- 3. HUB / CREATOR SCREEN (DARK BLUE) ---
+  // --- 3. HUB / CREATOR SCREEN (PURPLE) ---
   if (data.isHub) {
+    const clampedAnswer = clampAnswerToRange(answer, min, max);
+
     return (
-      <div className="h-full w-full min-h-screen bg-[#0b1528] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
-        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(11,21,40,1)] p-4 sm:p-5 w-full max-w-md border-3 border-slate-900">
-          <div className="text-center mb-3">
-            <p className="text-xs font-black text-blue-600 uppercase tracking-widest">Gimme a Ballpark</p>
-            <h1 className="text-xl sm:text-2xl font-black uppercase text-slate-950">Game Creator Hub</h1>
-          </div>
+      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
+        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950">
+          {/* Bigger Gimme a Ballpark header (Game Creator Hub text removed) */}
+          <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 text-center mb-3 tracking-wide">
+            Gimme a Ballpark
+          </h1>
 
           <div className="flex flex-col gap-2.5">
-            {/* Live title preview */}
-            <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-2 text-center">
-              <span className="text-[10px] font-bold text-gray-500 uppercase block">Live Title Preview:</span>
-              <span className="text-xs sm:text-sm font-black text-slate-950 leading-tight">
+            {/* Dynamic Title Preview without "Live Title Preview:" text */}
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-2 text-center min-h-[42px] flex items-center justify-center overflow-hidden">
+              <span
+                className={`${getPreviewTitleClass(
+                  previewTitle.length
+                )} font-black text-indigo-950 break-words leading-tight`}
+              >
                 Gimme a Ballpark for {getTitlePrefix(type)}
                 <span className="text-pink-600">{text.trim() || '[subject]'}</span>
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2 items-end">
               <label className="flex flex-col font-bold text-xs text-gray-700 uppercase">
                 Type
                 <select
@@ -230,7 +268,7 @@ export const App = () => {
                       setAnswer(500);
                     }
                   }}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-slate-900 outline-none border border-gray-300"
+                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-xs sm:text-sm text-indigo-950 outline-none border border-gray-300"
                 >
                   <option value="percentage">Percentage</option>
                   <option value="cost">Cost</option>
@@ -238,55 +276,106 @@ export const App = () => {
                 </select>
               </label>
 
-              <label className="flex flex-col font-bold text-xs text-gray-700 uppercase">
-                Real Answer
+              {/* Subject Input with dynamic placeholder, no "e.g.", and max length counter */}
+              <div className="col-span-2">
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-bold text-xs text-gray-700 uppercase">Subject</label>
+                  <span className="text-[10px] font-semibold text-gray-400">
+                    {text.length}/{maxSubjectLength}
+                  </span>
+                </div>
                 <input
-                  type="number"
-                  value={answer}
-                  onChange={(e) => setAnswer(Number(e.target.value))}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-emerald-700 outline-none border border-emerald-400"
+                  type="text"
+                  value={text}
+                  maxLength={maxSubjectLength}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={getPlaceholder(type)}
+                  className="w-full p-2 bg-gray-50 rounded-lg font-bold text-xs sm:text-sm text-indigo-950 outline-none border border-gray-300 placeholder:text-gray-400 placeholder:font-normal"
                 />
-              </label>
+              </div>
             </div>
 
-            {/* Subject Input with dynamic placeholder, no "e.g.", and max length counter */}
+            {/* Image Selector: Upload file vs Image link */}
             <div>
               <div className="flex justify-between items-center mb-1">
-                <label className="font-bold text-xs text-gray-700 uppercase">Subject</label>
-                <span className="text-[10px] font-semibold text-gray-400">
-                  {text.length}/{maxSubjectLength}
-                </span>
+                <span className="font-bold text-xs text-gray-700 uppercase">Image (Optional)</span>
+                {imageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl('')}
+                    className="text-[11px] font-bold text-red-500 hover:text-red-700 cursor-pointer"
+                  >
+                    ✕ Remove Image
+                  </button>
+                )}
               </div>
-              <input
-                type="text"
-                value={text}
-                maxLength={maxSubjectLength}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={getPlaceholder(type)}
-                className="w-full p-2 bg-gray-50 rounded-lg font-bold text-sm text-slate-900 outline-none border border-gray-300 placeholder:text-gray-400 placeholder:font-normal"
-              />
+
+              <div className="flex gap-2 mb-1.5">
+                <button
+                  type="button"
+                  onClick={() => setImageMode('upload')}
+                  className={`flex-1 py-1 px-2 text-xs font-black uppercase rounded-lg border-2 transition-all cursor-pointer ${
+                    imageMode === 'upload'
+                      ? 'bg-indigo-900 text-white border-indigo-950 shadow-xs'
+                      : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                  }`}
+                >
+                  📷 Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImageMode('link')}
+                  className={`flex-1 py-1 px-2 text-xs font-black uppercase rounded-lg border-2 transition-all cursor-pointer ${
+                    imageMode === 'link'
+                      ? 'bg-indigo-900 text-white border-indigo-950 shadow-xs'
+                      : 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200'
+                  }`}
+                >
+                  🔗 Image Link
+                </button>
+              </div>
+
+              {imageMode === 'upload' ? (
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer"
+                />
+              ) : (
+                <input
+                  type="url"
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  placeholder="https://... (image URL)"
+                  className="w-full p-2 bg-gray-50 rounded-lg font-bold text-xs sm:text-sm text-indigo-950 outline-none border border-gray-300 placeholder:text-gray-400 placeholder:font-normal"
+                />
+              )}
+
+              {imageUrl && (
+                <div className="mt-1.5 flex justify-center">
+                  <img
+                    src={imageUrl}
+                    alt="Preview"
+                    className="max-h-20 rounded-lg object-contain border border-purple-200 shadow-xs"
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Image URL submission box */}
-            <div>
-              <label className="block font-bold text-xs text-gray-700 uppercase mb-1">Image URL (Optional)</label>
-              <input
-                type="url"
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                placeholder="https://... (optional image link)"
-                className="w-full p-2 bg-gray-50 rounded-lg font-bold text-sm text-slate-900 outline-none border border-gray-300 placeholder:text-gray-400 placeholder:font-normal"
-              />
-            </div>
-
+            {/* Min Guess & Max Guess */}
             <div className="grid grid-cols-2 gap-2">
               <label className="flex flex-col font-bold text-xs text-gray-700 uppercase">
                 Min Guess
                 <input
                   type="number"
                   value={min}
-                  onChange={(e) => setMin(Number(e.target.value))}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-slate-900 outline-none border border-gray-300"
+                  onChange={(e) => {
+                    const newMin = Number(e.target.value);
+                    setMin(newMin);
+                    if (answer < newMin) setAnswer(newMin);
+                  }}
+                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-indigo-950 outline-none border border-gray-300"
                 />
               </label>
               <label className="flex flex-col font-bold text-xs text-gray-700 uppercase">
@@ -294,10 +383,46 @@ export const App = () => {
                 <input
                   type="number"
                   value={max}
-                  onChange={(e) => setMax(Number(e.target.value))}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-slate-900 outline-none border border-gray-300"
+                  onChange={(e) => {
+                    const newMax = Number(e.target.value);
+                    setMax(newMax);
+                    if (answer > newMax) setAnswer(newMax);
+                  }}
+                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-indigo-950 outline-none border border-gray-300"
                 />
               </label>
+            </div>
+
+            {/* Real Answer (BELOW Min & Max, with Slider and Number Input clamped) */}
+            <div className="bg-purple-50/60 border border-purple-200 rounded-xl p-2.5">
+              <div className="flex justify-between items-center mb-1">
+                <label className="font-bold text-xs text-gray-700 uppercase">Real Answer</label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-400">
+                    {formatValue(clampedAnswer, type)}
+                  </span>
+                  <input
+                    type="number"
+                    min={min}
+                    max={max}
+                    value={answer}
+                    onChange={(e) => handleAnswerChange(Number(e.target.value))}
+                    onBlur={() => setAnswer(clampedAnswer)}
+                    className="w-20 p-1 bg-white rounded font-bold text-xs text-emerald-800 outline-none border border-emerald-400 text-right"
+                  />
+                </div>
+              </div>
+
+              {/* Slider for real answer */}
+              <input
+                type="range"
+                min={min}
+                max={max}
+                value={clampedAnswer}
+                onChange={(e) => setAnswer(Number(e.target.value))}
+                className="w-full h-3 bg-gray-200 rounded-full appearance-none outline-none cursor-pointer mt-1"
+                style={{ accentColor: '#10B981' }}
+              />
             </div>
 
             {/* Create Game button: fixed border-b-4 to prevent modal jump */}
@@ -306,7 +431,7 @@ export const App = () => {
                 type="button"
                 onClick={handleCreateSubmit}
                 disabled={isCreating}
-                className="w-full bg-amber-400 hover:bg-amber-300 text-slate-950 uppercase font-black text-sm sm:text-base py-3 rounded-xl border-b-4 border-amber-600 active:translate-y-0.5 active:brightness-95 transition-transform disabled:opacity-50 cursor-pointer shadow-md"
+                className="w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm sm:text-base py-3 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform disabled:opacity-50 cursor-pointer shadow-md"
               >
                 {isCreating ? 'Creating Post...' : '🚀 Create Game Post'}
               </button>
@@ -317,11 +442,11 @@ export const App = () => {
     );
   }
 
-  // --- 4. GAME SCREEN (INLINE, DARK BLUE) ---
+  // --- 4. GAME SCREEN (INLINE, PURPLE) ---
   if (!data.configured || !data.config) {
     return (
-      <div className="h-full w-full min-h-screen bg-[#0b1528] flex flex-col items-center justify-center p-4 text-center select-none">
-        <div className="bg-white rounded-2xl shadow-xl border-4 border-slate-900 p-6 max-w-sm w-full">
+      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
+        <div className="bg-white rounded-2xl shadow-xl border-4 border-indigo-950 p-6 max-w-sm w-full">
           <p className="text-lg font-black uppercase text-amber-600 mb-2">Unconfigured Game</p>
           <p className="font-semibold text-gray-600 text-sm">This game post has not been configured yet.</p>
         </div>
@@ -348,10 +473,10 @@ export const App = () => {
           value={activeValue}
           onChange={(e) => !isResult && setCurrentGuess(Number(e.target.value))}
           disabled={isResult}
-          className={`w-full h-4 bg-slate-200 rounded-full appearance-none outline-none ${
+          className={`w-full h-4 bg-gray-200 rounded-full appearance-none outline-none ${
             isResult ? 'opacity-60 cursor-default' : 'cursor-grab active:cursor-grabbing'
           } z-20 relative`}
-          style={{ accentColor: isResult ? '#94A3B8' : '#F59E0B' }}
+          style={{ accentColor: isResult ? '#9CA3AF' : '#EAB308' }}
         />
 
         {/* Min / Max Labels */}
@@ -363,14 +488,14 @@ export const App = () => {
         {/* Results Overlay */}
         {isResult && data.stats && (
           <div className="absolute top-5 left-0 right-0 h-4 pointer-events-none z-10">
-            {/* Samples */}
+            {/* Samples (random selection of other people's guesses with half opacity along line) */}
             {data.stats.samples.map((s: number, i: number) => {
               const clamped = Math.max(rMin, Math.min(rMax, s));
               const leftPercent = ((clamped - rMin) / range) * 100;
               return (
                 <div
                   key={i}
-                  className="absolute w-2 h-5 bg-sky-400 opacity-50 rounded-full -top-0.5"
+                  className="absolute w-2 h-5 bg-purple-400 opacity-50 rounded-full -top-0.5"
                   style={{ left: `calc(${leftPercent}% - 4px)` }}
                 />
               );
@@ -402,8 +527,8 @@ export const App = () => {
                   className="absolute flex flex-col items-center top-5 z-25"
                   style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
                 >
-                  <div className="w-1.5 h-6 bg-emerald-600 rounded" />
-                  <span className="text-xs font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full mt-1 border border-emerald-500 shadow-sm whitespace-nowrap">
+                  <div className="w-1.5 h-6 bg-green-600 rounded" />
+                  <span className="text-xs font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full mt-1 border border-green-500 shadow-sm whitespace-nowrap">
                     Real: {gameDisplayVal(config.answer)}
                   </span>
                 </div>
@@ -420,10 +545,10 @@ export const App = () => {
                   className="absolute flex flex-col items-center -top-14 z-30"
                   style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
                 >
-                  <span className="text-xs font-black text-white bg-slate-900 px-2.5 py-1 rounded-full mb-1 shadow-md whitespace-nowrap">
+                  <span className="text-xs font-black text-white bg-indigo-950 px-2.5 py-1 rounded-full mb-1 shadow-md whitespace-nowrap">
                     You: {gameDisplayVal(ug)}
                   </span>
-                  <div className="w-3 h-3 bg-slate-900 rounded-full" />
+                  <div className="w-3 h-3 bg-indigo-950 rounded-full" />
                 </div>
               );
             })()}
@@ -433,7 +558,7 @@ export const App = () => {
         {/* Current Guess Tooltip while guessing */}
         {!isResult && (
           <div className="absolute -top-7 left-0 right-0 pointer-events-none flex justify-center">
-            <span className="text-lg font-black text-slate-950 bg-amber-400 px-3.5 py-0.5 rounded-full shadow-md border-2 border-slate-900">
+            <span className="text-lg font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-md border-2 border-indigo-950">
               {gameDisplayVal(currentGuess)}
             </span>
           </div>
@@ -443,26 +568,41 @@ export const App = () => {
   };
 
   return (
-    <div className="h-full w-full min-h-screen bg-[#0b1528] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
-      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(11,21,40,1)] p-4 sm:p-6 w-full max-w-lg border-3 border-slate-900">
+    <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
+      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-6 w-full max-w-lg border-3 border-indigo-950">
+        {/* Author / User avatar in circle in top left */}
+        <div className="flex items-center gap-2 mb-2">
+          <img
+            src={config.authorAvatarUrl || '/snoo.png'}
+            alt={config.authorName || 'user'}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/snoo.png';
+            }}
+            className="w-8 h-8 rounded-full border-2 border-indigo-950 bg-purple-100 object-cover shrink-0"
+          />
+          <span className="text-xs font-black text-indigo-950">
+            u/{config.authorName || 'Redditor'} wants:
+          </span>
+        </div>
+
         {/* Optional Image */}
         {config.imageUrl && !imageError && (
-          <div className="mb-3 flex justify-center">
+          <div className="mb-2.5 flex justify-center">
             <img
               src={config.imageUrl}
               alt={config.text}
               onError={() => setImageError(true)}
-              className="max-h-32 sm:max-h-36 max-w-full rounded-xl object-contain border border-slate-200 shadow-xs"
+              className="max-h-32 sm:max-h-36 max-w-full rounded-xl object-contain border border-purple-200 shadow-xs"
             />
           </div>
         )}
 
         {/* Header */}
         <div className="text-center mb-2">
-          <p className="text-xs font-black text-blue-600 uppercase tracking-widest mb-0.5">
+          <p className="text-xs font-black text-purple-600 uppercase tracking-widest mb-0.5">
             {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
           </p>
-          <h1 className="text-xl sm:text-2xl font-black uppercase text-slate-950 leading-snug">
+          <h1 className="text-xl sm:text-2xl font-black uppercase text-indigo-950 leading-snug">
             {config.type === 'percentage' && 'percentage of '}
             {config.type === 'cost' && 'cost of '}
             {config.type === 'count' && 'how many '}
@@ -476,7 +616,7 @@ export const App = () => {
             <button
               type="button"
               onClick={handleGuessSubmit}
-              className="mt-5 bg-emerald-500 hover:bg-emerald-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-emerald-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer"
+              className="mt-5 bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer"
             >
               Submit Guess
             </button>
@@ -485,13 +625,13 @@ export const App = () => {
           <div className="flex flex-col items-center">
             {renderSlider(true)}
 
-            <div className="mt-14 bg-blue-50 border-2 border-blue-200 rounded-xl p-3 w-full text-center shadow-xs">
-              <h2 className="text-base font-black uppercase text-slate-950 mb-1">Results Are In</h2>
+            <div className="mt-14 bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
+              <h2 className="text-base font-black uppercase text-indigo-950 mb-1">Results Are In</h2>
               {guessResult?.closerThanMajority ||
               (data.stats &&
                 data.userGuess !== undefined &&
                 Math.abs(data.userGuess - config.answer) < Math.abs(data.stats.averageGuess - config.answer)) ? (
-                <p className="text-emerald-700 font-bold text-sm">🎉 You were closer than the majority of Redditors!</p>
+                <p className="text-green-700 font-bold text-sm">🎉 You were closer than the majority of Redditors!</p>
               ) : (
                 <p className="text-amber-800 font-bold text-sm">
                   😅 The majority of Redditors were closer than you this time!

@@ -2,6 +2,8 @@ export type Config = {
   type: 'percentage' | 'cost' | 'count';
   text: string;
   imageUrl?: string | undefined;
+  authorName?: string | undefined;
+  authorAvatarUrl?: string | undefined;
   min: number;
   max: number;
   answer: number;

@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Reddit+Sans:ital,wght@0,200..900;1,200..900&display=swap');
 @import 'tailwindcss';
 
 html, body, #root {
@@ -11,7 +12,8 @@ html, body, #root {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
-  background-color: #0b1528;
+  background-color: #4a148c;
+  font-family: 'Reddit Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Range input touch-friendly styles */
@@ -28,8 +30,8 @@ input[type="range"]::-webkit-slider-thumb {
   height: 32px;
   border-radius: 9999px;
   background: #facc15;
-  border: 3px solid #0b1528;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35);
+  border: 3px solid #312e81;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   cursor: grab;
   transition: transform 0.1s ease;
 }
@@ -44,8 +46,8 @@ input[type="range"]::-moz-range-thumb {
   height: 32px;
   border-radius: 9999px;
   background: #facc15;
-  border: 3px solid #0b1528;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.35);
+  border: 3px solid #312e81;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
   cursor: grab;
   transition: transform 0.1s ease;
 }
