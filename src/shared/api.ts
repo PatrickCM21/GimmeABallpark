@@ -12,6 +12,7 @@ export type Config = {
 export type GameDataResponse = {
   isHub: boolean;
   configured: boolean;
+  isDevSubreddit?: boolean;
   hubUrl?: string;
   config?: Config;
   userGuess?: number;

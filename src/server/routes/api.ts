@@ -115,10 +115,13 @@ api.get('/game-data', async (c) => {
     }
 
     const hubUrl = (await redis.get('hub:latest:url')) || `https://reddit.com/r/${context.subredditName}`;
+    const subName = (context.subredditName || '').toLowerCase();
+    const isDevSubreddit = subName.includes('gimmeaballpark_dev') || subName.endsWith('_dev');
 
     return c.json<GameDataResponse>({
       isHub,
       configured,
+      isDevSubreddit,
       hubUrl,
       config,
       userGuess,
@@ -301,5 +304,34 @@ api.post('/guess', async (c) => {
   } catch (error: unknown) {
     console.error("API /guess Error:", error);
     return c.json({ error: error instanceof Error ? error.message : "Unknown error in /guess" }, 500);
+  }
+});
+
+api.post('/reset-game', async (c) => {
+  try {
+    const { postId } = context;
+    if (!postId) return c.json({ error: 'postId missing' }, 400);
+
+    const cleanId = postId.replace('t3_', '');
+    const idWithPrefix = `t3_${cleanId}`;
+
+    let username: string | undefined;
+    try {
+      username = await reddit.getCurrentUsername();
+    } catch (e) {
+      console.warn("Could not get username for reset:", e);
+    }
+
+    if (username) {
+      await Promise.all([
+        redis.del(`post:${idWithPrefix}:user:${username}`),
+        redis.del(`post:${cleanId}:user:${username}`),
+      ]);
+    }
+
+    return c.json({ success: true });
+  } catch (error: unknown) {
+    console.error("API /reset-game Error:", error);
+    return c.json({ error: error instanceof Error ? error.message : "Unknown error in /reset-game" }, 500);
   }
 });

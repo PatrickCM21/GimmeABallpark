@@ -65,8 +65,9 @@ const formatValue = (val: number, t: 'percentage' | 'cost' | 'count') => {
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
 
-  // In-window Creator state (openable in current window without redirect)
+  // In-window Creator state (opens in current window without redirect)
   const [showCreator, setShowCreator] = useState(false);
 
   // Hub / Creator Setup state
@@ -83,17 +84,50 @@ export const App = () => {
   const [currentGuess, setCurrentGuess] = useState<number>(50);
   const [showResults, setShowResults] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [resultsAnimated, setResultsAnimated] = useState(false);
+  const [buttonShake, setButtonShake] = useState(false);
+
+  // Phased animation steps:
+  // 0: Just user guess
+  // 1: Average spawns from right & settles
+  // 2: Real spawns from left & settles
+  // 3: Results banner & Ask for ballpark CTA fade in
+  const [animStep, setAnimStep] = useState<0 | 1 | 2 | 3>(0);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3200);
+  };
 
   useEffect(() => {
     fetchGameData()
       .then((d) => {
         setData(d);
         if (d.config) {
-          setCurrentGuess(Math.round((d.config.min + d.config.max) / 2));
-        }
-        if (d.userGuess !== undefined) {
-          setShowResults(true);
+          const mid = Math.round((d.config.min + d.config.max) / 2);
+          const span = d.config.max - d.config.min;
+
+          if (d.userGuess !== undefined) {
+            setCurrentGuess(d.userGuess);
+            setShowResults(true);
+            setAnimStep(3); // Already guessed previously, show full results immediately
+          } else {
+            setCurrentGuess(mid);
+            // Item 1: Slider moves left and right bouncing for ~1 sec before returning to middle, then button shakes!
+            const t1 = setTimeout(() => setCurrentGuess(Math.round(mid + span * 0.22)), 120);
+            const t2 = setTimeout(() => setCurrentGuess(Math.round(mid - span * 0.22)), 420);
+            const t3 = setTimeout(() => setCurrentGuess(Math.round(mid + span * 0.08)), 720);
+            const t4 = setTimeout(() => {
+              setCurrentGuess(mid);
+              setButtonShake(true);
+            }, 1000);
+
+            return () => {
+              clearTimeout(t1);
+              clearTimeout(t2);
+              clearTimeout(t3);
+              clearTimeout(t4);
+            };
+          }
         }
       })
       .catch((e: unknown) => {
@@ -101,15 +135,32 @@ export const App = () => {
       });
   }, []);
 
-  // Trigger slower dynamic bouncy slide-in animation when results are displayed
+  // Item 3: Staged sequential animation for results:
+  // Average comes out first and settles -> then Real comes out and settles -> then results section appears!
   useEffect(() => {
-    if (showResults) {
-      const timer = setTimeout(() => {
-        setResultsAnimated(true);
-      }, 70);
-      return () => clearTimeout(timer);
+    if (showResults && animStep < 3) {
+      // Step 1: Average comes out first
+      const timer1 = setTimeout(() => {
+        setAnimStep(1);
+      }, 100);
+
+      // Step 2: Real comes out after Average settles (~1.8s)
+      const timer2 = setTimeout(() => {
+        setAnimStep(2);
+      }, 1900);
+
+      // Step 3: Results section appears after Real settles (~1.8s)
+      const timer3 = setTimeout(() => {
+        setAnimStep(3);
+      }, 3700);
+
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+        clearTimeout(timer3);
+      };
     }
-  }, [showResults]);
+  }, [showResults, animStep]);
 
   // Calculate max allowed subject length so total Reddit title <= 300 chars
   const fullTitlePrefix = `Gimme a Ballpark for ${getTitlePrefix(type)}`;
@@ -129,7 +180,7 @@ export const App = () => {
     if (!file) return;
 
     if (file.size > 2 * 1024 * 1024) {
-      alert('Please choose an image under 2MB!');
+      showToast('⚠️ Please choose an image under 2MB!');
       return;
     }
 
@@ -145,12 +196,13 @@ export const App = () => {
   };
 
   const handleCreateSubmit = async () => {
+    // Item 4: Toast if subject is missing
     if (!text.trim()) {
-      alert('Please enter a question subject!');
+      showToast('⚠️ Please enter a subject for your question!');
       return;
     }
     if (min >= max) {
-      alert('Min guess must be less than max guess!');
+      showToast('⚠️ Min guess must be less than max guess!');
       return;
     }
 
@@ -186,9 +238,27 @@ export const App = () => {
       await submitGuess(currentGuess);
       const newData = await fetchGameData();
       setData(newData);
+      setAnimStep(0);
       setShowResults(true);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to submit guess');
+    }
+  };
+
+  // Item 6: Dev Subreddit Reset Handler
+  const handleResetGame = async () => {
+    try {
+      await fetch('/api/reset-game', { method: 'POST' });
+      setShowResults(false);
+      setAnimStep(0);
+      const newData = await fetchGameData();
+      setData(newData);
+      if (newData.config) {
+        setCurrentGuess(Math.round((newData.config.min + newData.config.max) / 2));
+      }
+      showToast('🔄 Game reset! You can guess again.');
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Failed to reset');
     }
   };
 
@@ -233,7 +303,14 @@ export const App = () => {
     const clampedAnswer = clampAnswerToRange(answer, min, max);
 
     return (
-      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
+      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none relative">
+        {/* Toast banner */}
+        {toast && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
+            <span>{toast}</span>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950">
           {/* Header with optional Back to Game button if opened in-window */}
           <div className="flex items-center justify-between mb-2">
@@ -455,7 +532,7 @@ export const App = () => {
     );
   }
 
-  // --- 4. GAME SCREEN (INLINE, PURPLE) ---
+  // --- 4. GAME SCREEN (Item 5: EXACT SAME PAGE STRUCTURE for Guessing & Results) ---
   if (!data.configured || !data.config) {
     return (
       <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
@@ -500,13 +577,18 @@ export const App = () => {
     avgExtended = true;
   }
 
-  // Slower dynamic spring slide-in values (Item 6)
-  const displayPosReal = resultsAnimated ? posReal : 0;
-  const displayPosAvg = resultsAnimated ? posAvg : 100;
-  const dynamicOpacity = resultsAnimated ? 1 : 0;
+  // Slower dynamic spring slide-in values (Item 6 & Item 3)
+  // Step 1: Average comes out first (animStep >= 1)
+  // Step 2: Real comes out after Average settles (animStep >= 2)
+  const isAvgActive = animStep >= 1;
+  const isRealActive = animStep >= 2;
+  const isResultsRevealed = animStep >= 3;
 
-  // Transparency if overlapping (Item 4)
-  const isAvgOverlappingUser = distAvgToUser < 7;
+  const displayPosAvg = isAvgActive ? posAvg : 100;
+  const avgOpacity = isAvgActive ? (distAvgToUser < 7 ? 0.75 : 1) : 0;
+
+  const displayPosReal = isRealActive ? posReal : 0;
+  const realOpacity = isRealActive ? 1 : 0;
 
   // Calculate detailed result tier and comment-encouraging feedback (Item 3)
   const userDiff = Math.abs(ug - config.answer);
@@ -556,43 +638,60 @@ export const App = () => {
   }
 
   return (
-    <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
+    <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none relative">
+      {/* Toast banner */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
+          <span>{toast}</span>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950">
-        {/* Author / User avatar in circle in top left with "u/x asks:" */}
-        <div className="flex items-center gap-2.5 mb-2">
-          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
-            {config.authorAvatarUrl ? (
-              <img
-                src={config.authorAvatarUrl}
-                alt={config.authorName || 'user'}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = '/snoo.png';
-                }}
-                className="w-full h-full object-cover rounded-full"
-                style={{ imageRendering: 'auto' }}
-              />
-            ) : (
-              /* Crisp vector Snoo avatar fallback */
-              <svg className="w-full h-full text-indigo-900" viewBox="0 0 100 100" fill="none">
-                <circle cx="50" cy="50" r="46" fill="#F1F5F9" />
-                <circle cx="50" cy="52" r="28" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="4" />
-                {/* Antenna */}
-                <path d="M50 24V14L62 18" stroke="#1E1B4B" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="63" cy="18" r="4" fill="#FF4500" />
-                {/* Ears */}
-                <circle cx="21" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
-                <circle cx="79" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
-                {/* Eyes */}
-                <circle cx="39" cy="50" r="5" fill="#FF4500" />
-                <circle cx="61" cy="50" r="5" fill="#FF4500" />
-                {/* Smile */}
-                <path d="M40 62C44 66 56 66 60 62" stroke="#1E1B4B" strokeWidth="3.5" strokeLinecap="round" />
-              </svg>
-            )}
+        {/* Top bar: Author avatar on left + Dev Reset button on right (Item 6) */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
+              {config.authorAvatarUrl ? (
+                <img
+                  src={config.authorAvatarUrl}
+                  alt={config.authorName || 'user'}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = '/snoo.png';
+                  }}
+                  className="w-full h-full object-cover rounded-full"
+                  style={{ imageRendering: 'auto' }}
+                />
+              ) : (
+                /* Crisp vector Snoo avatar fallback */
+                <svg className="w-full h-full text-indigo-900" viewBox="0 0 100 100" fill="none">
+                  <circle cx="50" cy="50" r="46" fill="#F1F5F9" />
+                  <circle cx="50" cy="52" r="28" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="4" />
+                  <path d="M50 24V14L62 18" stroke="#1E1B4B" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                  <circle cx="63" cy="18" r="4" fill="#FF4500" />
+                  <circle cx="21" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
+                  <circle cx="79" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
+                  <circle cx="39" cy="50" r="5" fill="#FF4500" />
+                  <circle cx="61" cy="50" r="5" fill="#FF4500" />
+                  <path d="M40 62C44 66 56 66 60 62" stroke="#1E1B4B" strokeWidth="3.5" strokeLinecap="round" />
+                </svg>
+              )}
+            </div>
+            <span className="text-xs sm:text-sm font-black text-indigo-950">
+              u/{config.authorName || 'Redditor'} asks:
+            </span>
           </div>
-          <span className="text-xs sm:text-sm font-black text-indigo-950">
-            u/{config.authorName || 'Redditor'} asks:
-          </span>
+
+          {/* Item 6: Dev Reset Button for r/gimmeaballpark_dev */}
+          {data.isDevSubreddit && (
+            <button
+              type="button"
+              onClick={handleResetGame}
+              className="text-[11px] font-black uppercase tracking-wide bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg cursor-pointer transition-all active:scale-95 shadow-2xs flex items-center gap-1"
+              title="Reset your guess (Dev Subreddit Only)"
+            >
+              <span>🔄</span> Reset (Dev)
+            </button>
+          )}
         </div>
 
         {/* Optional Image */}
@@ -607,9 +706,9 @@ export const App = () => {
           </div>
         )}
 
-        {/* Big Header with generous spacing before slider */}
-        <div className="text-center mb-6 sm:mb-8">
-          <p className="text-xs font-black text-purple-600 uppercase tracking-widest mb-1">
+        {/* Header (Item 2: bigger preamble text) */}
+        <div className="text-center mb-5 sm:mb-6">
+          <p className="text-sm sm:text-base font-black text-purple-600 uppercase tracking-wider mb-1">
             {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
           </p>
           <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 leading-tight">
@@ -620,51 +719,63 @@ export const App = () => {
           </h1>
         </div>
 
-        {/* GUESSING STATE */}
-        {!showResults ? (
-          <div className="flex flex-col items-center">
-            <div className="relative w-full py-6 mt-6">
-              {/* Proportional guess tooltip in purple/yellow palette */}
-              <div className="absolute -top-6 left-0 right-0 pointer-events-none flex justify-center">
-                <span className="text-sm sm:text-base font-black text-indigo-950 bg-yellow-400 px-3 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
+        {/* Item 5: UNIFIED SLIDER & TIMELINE BAR (SAME PAGE STRUCTURE) */}
+        <div className="flex flex-col items-center w-full">
+          <div className="relative w-full py-6 mt-3">
+            {/* 1. USER GUESS MARKER / ACTIVE TOOLTIP (Item 5: Purple/Yellow Wheel Style) */}
+            <div
+              className={`absolute left-0 right-0 pointer-events-none flex justify-center ${
+                showResults ? 'top-1/2 z-30' : '-top-5 z-20'
+              }`}
+              style={
+                showResults
+                  ? {
+                      left: `${posUser}%`,
+                      right: 'auto',
+                      transform: 'translate(-50%, -50%)',
+                    }
+                  : undefined
+              }
+            >
+              {showResults && (
+                <>
+                  {/* Stem line going UP */}
+                  <div className="absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-indigo-950" />
+                  {/* Badge at top of stem */}
+                  <div className="absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
+                    <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
+                      You: {gameDisplayVal(ug)}
+                    </span>
+                  </div>
+                  {/* Yellow Circular Dot with Indigo border on Timeline */}
+                  <div className="w-3.5 h-3.5 rounded-full bg-yellow-400 border-2 border-indigo-950 shadow-sm" />
+                </>
+              )}
+
+              {!showResults && (
+                <span className="text-sm sm:text-base font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
                   {gameDisplayVal(currentGuess)}
                 </span>
-              </div>
-
-              {/* Interactive slider */}
-              <input
-                type="range"
-                min={rMin}
-                max={rMax}
-                value={currentGuess}
-                onChange={(e) => setCurrentGuess(Number(e.target.value))}
-                className="w-full h-4 bg-gray-200 rounded-full appearance-none outline-none cursor-grab active:cursor-grabbing z-20 relative"
-                style={{ accentColor: '#EAB308' }}
-              />
-
-              {/* Min / Max Labels */}
-              <div className="flex justify-between mt-2 text-xs font-bold text-gray-400 uppercase">
-                <span>{gameDisplayVal(rMin)}</span>
-                <span>{gameDisplayVal(rMax)}</span>
-              </div>
+              )}
             </div>
 
-            {/* Submit Guess button with opening shake animation */}
-            <button
-              type="button"
-              onClick={handleGuessSubmit}
-              className="mt-6 bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer animate-button-shake"
-            >
-              Submit Guess
-            </button>
-          </div>
-        ) : (
-          /* RESULTS STATE */
-          <div className="flex flex-col items-center">
-            {/* Timeline with dots & stems (tighter vertical spacing) */}
-            <div className="relative w-full my-7 sm:my-8">
-              {/* Timeline Track */}
-              <div className="w-full h-4 bg-gray-200 rounded-full relative overflow-visible">
+            {/* Range Slider Track */}
+            <input
+              type="range"
+              min={rMin}
+              max={rMax}
+              value={showResults ? ug : currentGuess}
+              onChange={(e) => !showResults && setCurrentGuess(Number(e.target.value))}
+              disabled={showResults}
+              className={`w-full h-4 bg-gray-200 rounded-full appearance-none outline-none z-10 relative ${
+                showResults ? 'cursor-default opacity-80' : 'cursor-grab active:cursor-grabbing'
+              }`}
+              style={{ accentColor: '#EAB308' }}
+            />
+
+            {/* RESULTS OVERLAY ON THE SAME BAR (Item 5, 6, 7, 9) */}
+            {showResults && (
+              <div className="absolute top-6 left-0 right-0 h-4 pointer-events-none z-15 overflow-visible">
                 {/* Semi-transparent sample guesses */}
                 {data.stats?.samples.map((s: number, i: number) => {
                   const clamped = Math.max(rMin, Math.min(rMax, s));
@@ -678,35 +789,15 @@ export const App = () => {
                   );
                 })}
 
-                {/* 1. USER GUESS: Matches Yellow/Purple Wheel Slider Style (Dot + Stem + Badge) */}
-                <div
-                  className="absolute top-1/2 z-30 pointer-events-none"
-                  style={{
-                    left: `${posUser}%`,
-                    transform: 'translate(-50%, -50%)',
-                  }}
-                >
-                  {/* Stem line going UP */}
-                  <div className="absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-indigo-950" />
-                  {/* Badge at top of stem styled like yellow/purple wheel */}
-                  <div className="absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
-                      You: {gameDisplayVal(ug)}
-                    </span>
-                  </div>
-                  {/* Yellow Circular Dot with Indigo border on Timeline */}
-                  <div className="w-3.5 h-3.5 rounded-full bg-yellow-400 border-2 border-indigo-950 shadow-sm" />
-                </div>
-
                 {/* 2. REAL ANSWER: Dot + Stem + Badge (Spawns from Left, Bounces smoothly) */}
                 <div
                   className="absolute top-1/2 z-25 pointer-events-none"
                   style={{
                     left: `${displayPosReal}%`,
-                    opacity: dynamicOpacity,
+                    opacity: realOpacity,
                     transform: 'translate(-50%, -50%)',
                     transition:
-                      'left 1.9s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.6s ease-out',
+                      'left 1.9s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out',
                   }}
                 >
                   {/* Stem line going DOWN */}
@@ -724,15 +815,13 @@ export const App = () => {
                 {/* 3. AVERAGE GUESS: Dot + Stem + Badge (Spawns from Right, Bounces smoothly, transparent if overlapping) */}
                 {data.stats && (
                   <div
-                    className={`absolute top-1/2 z-20 pointer-events-none ${
-                      isAvgOverlappingUser ? 'opacity-75' : ''
-                    }`}
+                    className="absolute top-1/2 z-20 pointer-events-none"
                     style={{
                       left: `${displayPosAvg}%`,
-                      opacity: isAvgOverlappingUser ? 0.75 * dynamicOpacity : dynamicOpacity,
+                      opacity: avgOpacity,
                       transform: 'translate(-50%, -50%)',
                       transition:
-                        'left 2.1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.6s ease-out',
+                        'left 2.1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out',
                     }}
                   >
                     {avgSide === 'top' ? (
@@ -771,41 +860,56 @@ export const App = () => {
                   </div>
                 )}
               </div>
+            )}
 
-              {/* Min / Max Labels */}
-              <div className="flex justify-between mt-7 text-xs font-bold text-gray-400 uppercase">
-                <span>{gameDisplayVal(rMin)}</span>
-                <span>{gameDisplayVal(rMax)}</span>
-              </div>
+            {/* Min / Max Labels (Item 2: compact spacing) */}
+            <div className={`flex justify-between text-xs font-bold text-gray-400 uppercase ${showResults ? 'mt-7' : 'mt-2'}`}>
+              <span>{gameDisplayVal(rMin)}</span>
+              <span>{gameDisplayVal(rMax)}</span>
             </div>
+          </div>
 
-            {/* Results Banner (Comment-encouraging tiers) */}
-            <div className="mt-2.5 bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
-              <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-1">
-                {resultHeader}
-              </h2>
-              <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
-                {resultMessage}
-              </p>
-              {data.stats && (
-                <p className="text-[11px] text-gray-500 mt-1 font-semibold">
-                  {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
-                </p>
-              )}
-            </div>
-
-            {/* "Ask For Your Own Ballpark" button (opens in-window game maker without redirect) */}
+          {/* GUESS BUTTON: removed upon submitting guess (Item 5) */}
+          {!showResults && (
             <button
               type="button"
-              onClick={() => {
-                setShowCreator(true);
-              }}
-              className="mt-3.5 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm py-2.5 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+              onClick={handleGuessSubmit}
+              className={`mt-6 bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer ${
+                buttonShake ? 'animate-button-shake' : ''
+              }`}
             >
-              <span>🎯</span> Ask For Your Own Ballpark
+              Submit Guess
             </button>
-          </div>
-        )}
+          )}
+
+          {/* RESULTS SECTION: appears after Average and Real settle (Item 3 & 5) */}
+          {showResults && isResultsRevealed && (
+            <div className="w-full mt-2.5 flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
+              <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
+                <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-1">
+                  {resultHeader}
+                </h2>
+                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
+                  {resultMessage}
+                </p>
+                {data.stats && (
+                  <p className="text-[11px] text-gray-500 mt-1 font-semibold">
+                    {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
+                  </p>
+                )}
+              </div>
+
+              {/* "Ask For Your Own Ballpark" button (Item 1: opens maker in current window) */}
+              <button
+                type="button"
+                onClick={() => setShowCreator(true)}
+                className="mt-3 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm py-2.5 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>🎯</span> Ask For Your Own Ballpark
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
