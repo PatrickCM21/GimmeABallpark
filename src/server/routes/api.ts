@@ -114,9 +114,12 @@ api.get('/game-data', async (c) => {
       };
     }
 
+    const hubUrl = (await redis.get('hub:latest:url')) || `https://reddit.com/r/${context.subredditName}`;
+
     return c.json<GameDataResponse>({
       isHub,
       configured,
+      hubUrl,
       config,
       userGuess,
       stats

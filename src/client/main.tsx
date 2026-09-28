@@ -81,6 +81,7 @@ export const App = () => {
   const [showResults, setShowResults] = useState(false);
   const [guessResult, setGuessResult] = useState<GuessResponse | null>(null);
   const [imageError, setImageError] = useState(false);
+  const [resultsAnimated, setResultsAnimated] = useState(false);
 
   useEffect(() => {
     fetchGameData()
@@ -97,6 +98,16 @@ export const App = () => {
         setError(e instanceof Error ? e.message : 'Unknown error');
       });
   }, []);
+
+  // Trigger bouncy slide-in animation when results are displayed
+  useEffect(() => {
+    if (showResults) {
+      const timer = setTimeout(() => {
+        setResultsAnimated(true);
+      }, 70);
+      return () => clearTimeout(timer);
+    }
+  }, [showResults]);
 
   // Calculate max allowed subject length so total Reddit title <= 300 chars
   const fullTitlePrefix = `Gimme a Ballpark for ${getTitlePrefix(type)}`;
@@ -125,11 +136,6 @@ export const App = () => {
       setImageUrl(reader.result as string);
     };
     reader.readAsDataURL(file);
-  };
-
-  // Clamp answer between min and max
-  const handleAnswerChange = (val: number) => {
-    setAnswer(val);
   };
 
   const clampAnswerToRange = (val: number, curMin: number, curMax: number) => {
@@ -268,7 +274,7 @@ export const App = () => {
                       setAnswer(500);
                     }
                   }}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-xs sm:text-sm text-indigo-950 outline-none border border-gray-300"
+                  className="mt-1 p-2 bg-gray-50 rounded-xl font-bold text-xs sm:text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs cursor-pointer focus:border-indigo-900 transition-colors"
                 >
                   <option value="percentage">Percentage</option>
                   <option value="cost">Cost</option>
@@ -295,8 +301,8 @@ export const App = () => {
               </div>
             </div>
 
-            {/* Image Selector: Upload file vs Image link */}
-            <div>
+            {/* Fixed-height container for Image Selector to prevent modal shifting */}
+            <div className="min-h-[82px] flex flex-col justify-start">
               <div className="flex justify-between items-center mb-1">
                 <span className="font-bold text-xs text-gray-700 uppercase">Image (Optional)</span>
                 {imageUrl && (
@@ -310,7 +316,7 @@ export const App = () => {
                 )}
               </div>
 
-              <div className="flex gap-2 mb-1.5">
+              <div className="flex gap-2 mb-1">
                 <button
                   type="button"
                   onClick={() => setImageMode('upload')}
@@ -335,32 +341,24 @@ export const App = () => {
                 </button>
               </div>
 
-              {imageMode === 'upload' ? (
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer"
-                />
-              ) : (
-                <input
-                  type="url"
-                  value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
-                  placeholder="https://... (image URL)"
-                  className="w-full p-2 bg-gray-50 rounded-lg font-bold text-xs sm:text-sm text-indigo-950 outline-none border border-gray-300 placeholder:text-gray-400 placeholder:font-normal"
-                />
-              )}
-
-              {imageUrl && (
-                <div className="mt-1.5 flex justify-center">
-                  <img
-                    src={imageUrl}
-                    alt="Preview"
-                    className="max-h-20 rounded-lg object-contain border border-purple-200 shadow-xs"
+              <div className="h-9 flex items-center">
+                {imageMode === 'upload' ? (
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    className="w-full text-xs text-gray-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-black file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer"
                   />
-                </div>
-              )}
+                ) : (
+                  <input
+                    type="url"
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    placeholder="https://... (image URL)"
+                    className="w-full h-8 p-2 bg-gray-50 rounded-lg font-bold text-xs sm:text-sm text-indigo-950 outline-none border border-gray-300 placeholder:text-gray-400 placeholder:font-normal"
+                  />
+                )}
+              </div>
             </div>
 
             {/* Min Guess & Max Guess */}
@@ -394,7 +392,7 @@ export const App = () => {
             </div>
 
             {/* Real Answer (BELOW Min & Max, with Slider and Number Input clamped) */}
-            <div className="bg-purple-50/60 border border-purple-200 rounded-xl p-2.5">
+            <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-2.5">
               <div className="flex justify-between items-center mb-1">
                 <label className="font-bold text-xs text-gray-700 uppercase">Real Answer</label>
                 <div className="flex items-center gap-1.5">
@@ -406,9 +404,9 @@ export const App = () => {
                     min={min}
                     max={max}
                     value={answer}
-                    onChange={(e) => handleAnswerChange(Number(e.target.value))}
+                    onChange={(e) => setAnswer(Number(e.target.value))}
                     onBlur={() => setAnswer(clampedAnswer)}
-                    className="w-20 p-1 bg-white rounded font-bold text-xs text-emerald-800 outline-none border border-emerald-400 text-right"
+                    className="w-24 p-1 bg-white rounded font-bold text-xs text-emerald-800 outline-none border border-emerald-400 text-right"
                   />
                 </div>
               </div>
@@ -457,131 +455,84 @@ export const App = () => {
   const config = data.config;
   const gameDisplayVal = (val: number) => formatValue(val, config.type);
 
-  const renderSlider = (isResult: boolean) => {
-    const rMin = config.min;
-    const rMax = config.max;
-    const range = rMax - rMin || 1;
-    const activeValue = isResult ? (data.userGuess ?? currentGuess) : currentGuess;
+  const rMin = config.min;
+  const rMax = config.max;
+  const range = rMax - rMin || 1;
 
-    return (
-      <div className="relative w-full py-5 mt-3">
-        {/* Slider input */}
-        <input
-          type="range"
-          min={rMin}
-          max={rMax}
-          value={activeValue}
-          onChange={(e) => !isResult && setCurrentGuess(Number(e.target.value))}
-          disabled={isResult}
-          className={`w-full h-4 bg-gray-200 rounded-full appearance-none outline-none ${
-            isResult ? 'opacity-60 cursor-default' : 'cursor-grab active:cursor-grabbing'
-          } z-20 relative`}
-          style={{ accentColor: isResult ? '#9CA3AF' : '#EAB308' }}
-        />
+  // Calculate percentage positions (0 to 100)
+  const ug = data.userGuess ?? currentGuess;
+  const clampedUser = Math.max(rMin, Math.min(rMax, ug));
+  const posUser = ((clampedUser - rMin) / range) * 100;
 
-        {/* Min / Max Labels */}
-        <div className="flex justify-between mt-2 text-xs font-bold text-gray-400 uppercase">
-          <span>{gameDisplayVal(rMin)}</span>
-          <span>{gameDisplayVal(rMax)}</span>
-        </div>
+  const clampedReal = Math.max(rMin, Math.min(rMax, config.answer));
+  const posReal = ((clampedReal - rMin) / range) * 100;
 
-        {/* Results Overlay */}
-        {isResult && data.stats && (
-          <div className="absolute top-5 left-0 right-0 h-4 pointer-events-none z-10">
-            {/* Samples (random selection of other people's guesses with half opacity along line) */}
-            {data.stats.samples.map((s: number, i: number) => {
-              const clamped = Math.max(rMin, Math.min(rMax, s));
-              const leftPercent = ((clamped - rMin) / range) * 100;
-              return (
-                <div
-                  key={i}
-                  className="absolute w-2 h-5 bg-purple-400 opacity-50 rounded-full -top-0.5"
-                  style={{ left: `calc(${leftPercent}% - 4px)` }}
-                />
-              );
-            })}
+  const avgVal = data.stats?.averageGuess ?? ug;
+  const clampedAvg = Math.max(rMin, Math.min(rMax, avgVal));
+  const posAvg = ((clampedAvg - rMin) / range) * 100;
 
-            {/* Average guess */}
-            {(() => {
-              const clamped = Math.max(rMin, Math.min(rMax, data.stats.averageGuess));
-              const leftPercent = ((clamped - rMin) / range) * 100;
-              return (
-                <div
-                  className="absolute flex flex-col items-center -top-8 z-25"
-                  style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
-                >
-                  <span className="text-[10px] font-black text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded-full border border-blue-400 uppercase shadow-xs">
-                    Avg: {gameDisplayVal(Math.round(data.stats.averageGuess))}
-                  </span>
-                  <div className="w-1 h-8 bg-blue-600 rounded" />
-                </div>
-              );
-            })()}
+  // Collision handling (Item 6):
+  // User guess is ALWAYS on TOP (side: 'top').
+  // Real answer is ALWAYS on BOTTOM (side: 'bottom').
+  // Average placement:
+  // - If close to User (<18%) and not close to Real, put Average on BOTTOM!
+  // - If close to Real (<18%) and not close to User, put Average on TOP!
+  // - If close to BOTH (all 3 clustered together), put Average on TOP with an EXTENDED stem (h-14) so it stacks above User!
+  // - Otherwise, put Average on TOP!
+  const distAvgToUser = Math.abs(posAvg - posUser);
+  const distAvgToReal = Math.abs(posAvg - posReal);
 
-            {/* Real Answer */}
-            {(() => {
-              const clamped = Math.max(rMin, Math.min(rMax, config.answer));
-              const leftPercent = ((clamped - rMin) / range) * 100;
-              return (
-                <div
-                  className="absolute flex flex-col items-center top-5 z-25"
-                  style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
-                >
-                  <div className="w-1.5 h-6 bg-green-600 rounded" />
-                  <span className="text-xs font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full mt-1 border border-green-500 shadow-sm whitespace-nowrap">
-                    Real: {gameDisplayVal(config.answer)}
-                  </span>
-                </div>
-              );
-            })()}
+  let avgSide: 'top' | 'bottom' = 'top';
+  let avgExtended = false;
 
-            {/* User Guess */}
-            {(() => {
-              const ug = data.userGuess ?? currentGuess;
-              const clamped = Math.max(rMin, Math.min(rMax, ug));
-              const leftPercent = ((clamped - rMin) / range) * 100;
-              return (
-                <div
-                  className="absolute flex flex-col items-center -top-14 z-30"
-                  style={{ left: `${leftPercent}%`, transform: 'translateX(-50%)' }}
-                >
-                  <span className="text-xs font-black text-white bg-indigo-950 px-2.5 py-1 rounded-full mb-1 shadow-md whitespace-nowrap">
-                    You: {gameDisplayVal(ug)}
-                  </span>
-                  <div className="w-3 h-3 bg-indigo-950 rounded-full" />
-                </div>
-              );
-            })()}
-          </div>
-        )}
+  if (distAvgToUser < 18 && distAvgToReal >= 18) {
+    avgSide = 'bottom';
+  } else if (distAvgToUser < 18 && distAvgToReal < 18) {
+    avgExtended = true;
+  }
 
-        {/* Current Guess Tooltip while guessing */}
-        {!isResult && (
-          <div className="absolute -top-7 left-0 right-0 pointer-events-none flex justify-center">
-            <span className="text-lg font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-md border-2 border-indigo-950">
-              {gameDisplayVal(currentGuess)}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  };
+  // Animation values for dynamic spring slide-in from sides (Item 9)
+  const displayPosReal = resultsAnimated ? posReal : 0;
+  const displayPosAvg = resultsAnimated ? posAvg : 100;
+  const dynamicOpacity = resultsAnimated ? 1 : 0;
 
   return (
     <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
-      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-6 w-full max-w-lg border-3 border-indigo-950">
-        {/* Author / User avatar in circle in top left */}
-        <div className="flex items-center gap-2 mb-2">
-          <img
-            src={config.authorAvatarUrl || '/snoo.png'}
-            alt={config.authorName || 'user'}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = '/snoo.png';
-            }}
-            className="w-8 h-8 rounded-full border-2 border-indigo-950 bg-purple-100 object-cover shrink-0"
-          />
-          <span className="text-xs font-black text-indigo-950">
-            u/{config.authorName || 'Redditor'} wants:
+      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-5 sm:p-6 w-full max-w-lg border-3 border-indigo-950">
+        {/* Author / User avatar in circle in top left with "u/x asks:" */}
+        <div className="flex items-center gap-2.5 mb-2">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
+            {config.authorAvatarUrl ? (
+              <img
+                src={config.authorAvatarUrl}
+                alt={config.authorName || 'user'}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = '/snoo.png';
+                }}
+                className="w-full h-full object-cover rounded-full"
+                style={{ imageRendering: 'auto' }}
+              />
+            ) : (
+              /* Crisp vector Snoo avatar fallback */
+              <svg className="w-full h-full text-indigo-900" viewBox="0 0 100 100" fill="none">
+                <circle cx="50" cy="50" r="46" fill="#F1F5F9" />
+                <circle cx="50" cy="52" r="28" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="4" />
+                {/* Antenna */}
+                <path d="M50 24V14L62 18" stroke="#1E1B4B" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="63" cy="18" r="4" fill="#FF4500" />
+                {/* Ears */}
+                <circle cx="21" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
+                <circle cx="79" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
+                {/* Eyes */}
+                <circle cx="39" cy="50" r="5" fill="#FF4500" />
+                <circle cx="61" cy="50" r="5" fill="#FF4500" />
+                {/* Smile */}
+                <path d="M40 62C44 66 56 66 60 62" stroke="#1E1B4B" strokeWidth="3.5" strokeLinecap="round" />
+              </svg>
+            )}
+          </div>
+          <span className="text-xs sm:text-sm font-black text-indigo-950">
+            u/{config.authorName || 'Redditor'} asks:
           </span>
         </div>
 
@@ -597,12 +548,12 @@ export const App = () => {
           </div>
         )}
 
-        {/* Header */}
-        <div className="text-center mb-2">
-          <p className="text-xs font-black text-purple-600 uppercase tracking-widest mb-0.5">
+        {/* Big Header with generous spacing before slider */}
+        <div className="text-center mb-6 sm:mb-8">
+          <p className="text-xs font-black text-purple-600 uppercase tracking-widest mb-1">
             {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
           </p>
-          <h1 className="text-xl sm:text-2xl font-black uppercase text-indigo-950 leading-snug">
+          <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 leading-tight">
             {config.type === 'percentage' && 'percentage of '}
             {config.type === 'cost' && 'cost of '}
             {config.type === 'count' && 'how many '}
@@ -610,23 +561,166 @@ export const App = () => {
           </h1>
         </div>
 
+        {/* GUESSING STATE */}
         {!showResults ? (
           <div className="flex flex-col items-center">
-            {renderSlider(false)}
+            <div className="relative w-full py-6 mt-6">
+              {/* Proportional guess tooltip (well-separated from question) */}
+              <div className="absolute -top-6 left-0 right-0 pointer-events-none flex justify-center">
+                <span className="text-sm sm:text-base font-black text-indigo-950 bg-yellow-400 px-3 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
+                  {gameDisplayVal(currentGuess)}
+                </span>
+              </div>
+
+              {/* Interactive slider */}
+              <input
+                type="range"
+                min={rMin}
+                max={rMax}
+                value={currentGuess}
+                onChange={(e) => setCurrentGuess(Number(e.target.value))}
+                className="w-full h-4 bg-gray-200 rounded-full appearance-none outline-none cursor-grab active:cursor-grabbing z-20 relative"
+                style={{ accentColor: '#EAB308' }}
+              />
+
+              {/* Min / Max Labels */}
+              <div className="flex justify-between mt-2 text-xs font-bold text-gray-400 uppercase">
+                <span>{gameDisplayVal(rMin)}</span>
+                <span>{gameDisplayVal(rMax)}</span>
+              </div>
+            </div>
+
+            {/* Submit Guess button with opening shake animation */}
             <button
               type="button"
               onClick={handleGuessSubmit}
-              className="mt-5 bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer"
+              className="mt-6 bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer animate-button-shake"
             >
               Submit Guess
             </button>
           </div>
         ) : (
+          /* RESULTS STATE */
           <div className="flex flex-col items-center">
-            {renderSlider(true)}
+            {/* Timeline with dots & stems */}
+            <div className="relative w-full my-12 sm:my-14">
+              {/* Timeline Track */}
+              <div className="w-full h-4 bg-gray-200 rounded-full relative overflow-visible">
+                {/* Semi-transparent sample guesses */}
+                {data.stats?.samples.map((s: number, i: number) => {
+                  const clamped = Math.max(rMin, Math.min(rMax, s));
+                  const leftPct = ((clamped - rMin) / range) * 100;
+                  return (
+                    <div
+                      key={i}
+                      className="absolute w-2 h-4 bg-purple-400 opacity-40 rounded-full top-0 pointer-events-none"
+                      style={{ left: `calc(${leftPct}% - 4px)` }}
+                    />
+                  );
+                })}
 
-            <div className="mt-14 bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
-              <h2 className="text-base font-black uppercase text-indigo-950 mb-1">Results Are In</h2>
+                {/* 1. USER GUESS: Dot + Stem + Badge (Always on TOP) */}
+                <div
+                  className="absolute top-1/2 z-30 pointer-events-none"
+                  style={{
+                    left: `${posUser}%`,
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                >
+                  {/* Stem line going UP */}
+                  <div className="absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-indigo-950" />
+                  {/* Badge at top of stem */}
+                  <div className="absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
+                    <span className="text-[11px] font-black text-white bg-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
+                      You: {gameDisplayVal(ug)}
+                    </span>
+                  </div>
+                  {/* Circular Dot on Timeline */}
+                  <div className="w-3.5 h-3.5 rounded-full bg-indigo-950 border-2 border-white shadow-sm" />
+                </div>
+
+                {/* 2. REAL ANSWER: Dot + Stem + Badge (Spawns from Left, Bounces to position) */}
+                <div
+                  className="absolute top-1/2 z-25 pointer-events-none"
+                  style={{
+                    left: `${displayPosReal}%`,
+                    opacity: dynamicOpacity,
+                    transform: 'translate(-50%, -50%)',
+                    transition:
+                      'left 1.1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out',
+                  }}
+                >
+                  {/* Stem line going DOWN */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-emerald-600" />
+                  {/* Badge at bottom of stem */}
+                  <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
+                    <span className="text-[11px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-500 shadow-sm">
+                      Real: {gameDisplayVal(config.answer)}
+                    </span>
+                  </div>
+                  {/* Circular Dot on Timeline */}
+                  <div className="w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
+                </div>
+
+                {/* 3. AVERAGE GUESS: Dot + Stem + Badge (Spawns from Right, Bounces to position, alternates side or elevates) */}
+                {data.stats && (
+                  <div
+                    className="absolute top-1/2 z-20 pointer-events-none"
+                    style={{
+                      left: `${displayPosAvg}%`,
+                      opacity: dynamicOpacity,
+                      transform: 'translate(-50%, -50%)',
+                      transition:
+                        'left 1.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out',
+                    }}
+                  >
+                    {avgSide === 'top' ? (
+                      <>
+                        {/* Stem line going UP */}
+                        <div
+                          className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-blue-600 ${
+                            avgExtended ? 'h-14' : 'h-6'
+                          }`}
+                        />
+                        {/* Badge at top of stem */}
+                        <div
+                          className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap ${
+                            avgExtended ? 'bottom-[60px]' : 'bottom-[28px]'
+                          }`}
+                        >
+                          <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
+                            Avg: {gameDisplayVal(Math.round(avgVal))}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Stem line going DOWN */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-blue-600" />
+                        {/* Badge at bottom of stem */}
+                        <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
+                          <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
+                            Avg: {gameDisplayVal(Math.round(avgVal))}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                    {/* Circular Dot on Timeline */}
+                    <div className="w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                  </div>
+                )}
+              </div>
+
+              {/* Min / Max Labels */}
+              <div className="flex justify-between mt-10 text-xs font-bold text-gray-400 uppercase">
+                <span>{gameDisplayVal(rMin)}</span>
+                <span>{gameDisplayVal(rMax)}</span>
+              </div>
+            </div>
+
+            {/* Results Banner */}
+            <div className="mt-4 bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
+              <h2 className="text-base font-black uppercase text-indigo-950 mb-0.5">Results Are In</h2>
               {guessResult?.closerThanMajority ||
               (data.stats &&
                 data.userGuess !== undefined &&
@@ -638,11 +732,26 @@ export const App = () => {
                 </p>
               )}
               {data.stats && (
-                <p className="text-xs text-gray-500 mt-1 font-semibold">
+                <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
                   {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
                 </p>
               )}
             </div>
+
+            {/* "Ask For Your Own Ballpark" button under results */}
+            <button
+              type="button"
+              onClick={() => {
+                if (data.hubUrl) {
+                  navigateTo(data.hubUrl);
+                } else {
+                  navigateTo(`https://reddit.com/r/${config.authorName || ''}`);
+                }
+              }}
+              className="mt-3.5 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm py-2.5 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              <span>🎯</span> Ask For Your Own Ballpark
+            </button>
           </div>
         )}
       </div>

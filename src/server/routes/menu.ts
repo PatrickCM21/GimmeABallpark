@@ -14,14 +14,15 @@ menu.post('/hub-create', async (c) => {
     const cleanId = post.id.replace('t3_', '');
     const idWithPrefix = `t3_${cleanId}`;
 
+    const targetUrl = post.url || (post.permalink ? `https://reddit.com${post.permalink}` : `https://reddit.com/r/${context.subredditName}/comments/${cleanId}`);
+
     // Mark post as a Hub across all possible key representations
     await Promise.all([
       redis.set(`post:${post.id}:isHub`, 'true'),
       redis.set(`post:${cleanId}:isHub`, 'true'),
       redis.set(`post:${idWithPrefix}:isHub`, 'true'),
+      redis.set('hub:latest:url', targetUrl),
     ]);
-
-    const targetUrl = post.url || (post.permalink ? `https://reddit.com${post.permalink}` : `https://reddit.com/r/${context.subredditName}/comments/${cleanId}`);
 
     return c.json<UiResponse>(
       {
