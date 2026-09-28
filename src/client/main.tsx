@@ -86,6 +86,7 @@ export const App = () => {
   // Game state
   const [currentGuess, setCurrentGuess] = useState<number>(50);
   const [showResults, setShowResults] = useState(false);
+  const [cardExpanded, setCardExpanded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [buttonShake, setButtonShake] = useState(false);
   const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
@@ -128,11 +129,13 @@ export const App = () => {
           if (d.userGuess !== undefined) {
             hasGuessedInitiallyRef.current = true;
             setCurrentGuess(d.userGuess);
+            setCardExpanded(true);
             setShowResults(true);
             setUserDotShrunk(true);
             setAnimStep(3); // Already guessed previously, show full results immediately
           } else {
             setCurrentGuess(mid);
+            setCardExpanded(false);
             // Item 1: Silky smooth dynamic slider shift on open using requestAnimationFrame
             userInteractedRef.current = false;
             let startTime: number | null = null;
@@ -186,20 +189,70 @@ export const App = () => {
     return 'text-[11px] leading-tight';
   };
 
-  const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxDim = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(e.target?.result as string);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Compress to JPEG at 0.82 quality to ensure fast upload and safe storage size
+          const compressed = canvas.toDataURL('image/jpeg', 0.82);
+          resolve(compressed);
+        };
+        img.onerror = () => {
+          resolve(e.target?.result as string);
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('⚠️ Please choose an image under 2MB!');
-      return;
+    try {
+      showToast('📸 Optimizing image...');
+      const result = await compressImage(file);
+      setImageUrl(result);
+      showToast('✅ Image attached!');
+    } catch {
+      showToast('⚠️ Could not process image');
     }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageUrl(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const clampAnswerToRange = (val: number, curMin: number, curMax: number) => {
@@ -212,12 +265,14 @@ export const App = () => {
       showToast('⚠️ Please enter a subject for your question!');
       return;
     }
-    if (min >= max) {
+    const finalMin = type === 'percentage' ? 0 : min;
+    const finalMax = type === 'percentage' ? 100 : max;
+    if (finalMin >= finalMax) {
       showToast('⚠️ Min guess must be less than max guess!');
       return;
     }
 
-    const finalAnswer = clampAnswerToRange(answer, min, max);
+    const finalAnswer = clampAnswerToRange(answer, finalMin, finalMax);
 
     setIsCreating(true);
     try {
@@ -225,8 +280,8 @@ export const App = () => {
         type,
         text: text.trim().slice(0, maxSubjectLength),
         imageUrl: imageUrl.trim() || undefined,
-        min,
-        max,
+        min: finalMin,
+        max: finalMax,
         answer: finalAnswer,
       });
       if (res.success && res.postUrl) {
@@ -249,15 +304,16 @@ export const App = () => {
     setIsSubmittingGuess(true);
     clearAnimTimeouts();
 
-    // 1. Instantly switch to results mode with player's guess
+    // 1. Immediately trigger card expansion before shrinking the circle
+    setCardExpanded(true);
     setShowResults(true);
     setUserDotShrunk(false);
     setAnimStep(0);
 
-    // 2. Animate user dot shrink and guess pop-up immediately in next tick
+    // 2. AFTER the card finishes expanding (~450ms), animate thumb shrinking into dot on timeline
     const shrinkTimer = setTimeout(() => {
       setUserDotShrunk(true);
-    }, 50);
+    }, 450);
     animTimeoutsRef.current.push(shrinkTimer);
 
     // 3. Fire server request in parallel
@@ -266,9 +322,9 @@ export const App = () => {
       return await fetchGameData();
     })();
 
-    // 4. Minimum 600ms so user sees their ball shrink and badge pop up
+    // 4. Minimum 1050ms (450ms expansion + 600ms ball shrink & badge pop-up)
     const minDelay = new Promise((resolve) => {
-      const delayTimer = setTimeout(resolve, 600);
+      const delayTimer = setTimeout(resolve, 1050);
       animTimeoutsRef.current.push(delayTimer);
     });
 
@@ -286,7 +342,7 @@ export const App = () => {
         const step2Timer = setTimeout(() => {
           setAnimStep(2);
 
-          // Step 3: Results banner & Ask for ballpark CTA fade in (~1.6s later)
+          // Step 3: Results banner & CREATE YOUR OWN CTA fade in (~1.6s later)
           const step3Timer = setTimeout(() => {
             setAnimStep(3);
           }, 1600);
@@ -297,6 +353,7 @@ export const App = () => {
       .catch((e: unknown) => {
         clearAnimTimeouts();
         setIsSubmittingGuess(false);
+        setCardExpanded(false);
         setShowResults(false);
         setUserDotShrunk(false);
         setAnimStep(0);
@@ -311,6 +368,7 @@ export const App = () => {
       await fetch('/api/reset-game', { method: 'POST' });
       hasGuessedInitiallyRef.current = false;
       setIsSubmittingGuess(false);
+      setCardExpanded(false);
       setShowResults(false);
       setAnimStep(0);
       setUserDotShrunk(false);
@@ -522,26 +580,40 @@ export const App = () => {
                 Min Guess
                 <input
                   type="number"
-                  value={min}
+                  value={type === 'percentage' ? 0 : min}
+                  disabled={type === 'percentage'}
+                  readOnly={type === 'percentage'}
                   onChange={(e) => {
+                    if (type === 'percentage') return;
                     const newMin = Number(e.target.value);
                     setMin(newMin);
                     if (answer < newMin) setAnswer(newMin);
                   }}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-indigo-950 outline-none border border-gray-300"
+                  className={`mt-1 p-2 rounded-lg font-bold text-sm text-indigo-950 outline-none border ${
+                    type === 'percentage'
+                      ? 'bg-gray-200/80 border-gray-300 text-gray-500 cursor-not-allowed select-none'
+                      : 'bg-gray-50 border-gray-300'
+                  }`}
                 />
               </label>
               <label className="flex flex-col font-bold text-xs text-gray-700 uppercase">
                 Max Guess
                 <input
                   type="number"
-                  value={max}
+                  value={type === 'percentage' ? 100 : max}
+                  disabled={type === 'percentage'}
+                  readOnly={type === 'percentage'}
                   onChange={(e) => {
+                    if (type === 'percentage') return;
                     const newMax = Number(e.target.value);
                     setMax(newMax);
                     if (answer > newMax) setAnswer(newMax);
                   }}
-                  className="mt-1 p-2 bg-gray-50 rounded-lg font-bold text-sm text-indigo-950 outline-none border border-gray-300"
+                  className={`mt-1 p-2 rounded-lg font-bold text-sm text-indigo-950 outline-none border ${
+                    type === 'percentage'
+                      ? 'bg-gray-200/80 border-gray-300 text-gray-500 cursor-not-allowed select-none'
+                      : 'bg-gray-50 border-gray-300'
+                  }`}
                 />
               </label>
             </div>
@@ -710,7 +782,11 @@ export const App = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950 h-[480px] sm:h-[490px] max-h-full flex flex-col justify-between overflow-hidden">
+      <div className={`bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950 flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out ${
+        cardExpanded
+          ? 'h-[485px] sm:h-[495px]'
+          : (config.imageUrl && !imageError ? 'h-[420px] sm:h-[430px]' : 'h-[370px] sm:h-[380px]')
+      }`}>
         {/* Top bar: Author avatar on left + Dev Reset button on right */}
         <div className="flex items-center justify-between shrink-0 mb-1">
           <div className="flex items-center gap-2.5">
@@ -786,19 +862,19 @@ export const App = () => {
 
         {/* UNIFIED SLIDER & TIMELINE BAR */}
         <div className="flex flex-col items-center w-full shrink-0">
-          <div className="relative w-full pt-8 pb-7">
+          <div className="relative w-full pt-10 pb-6">
             {/* 16px Track Container */}
             <div className="relative w-full h-4">
-              {/* Tooltip badge while guessing */}
+              {/* Tooltip badge while guessing - floating above slider */}
               {!showResults && (
                 <div
-                  className="absolute -top-7 pointer-events-none flex justify-center z-20"
+                  className="absolute -top-10 pointer-events-none flex justify-center z-20"
                   style={{
                     left: toTrackPct(posUser),
                     transform: 'translateX(-50%)',
                   }}
                 >
-                  <span className="text-xs sm:text-sm font-black text-indigo-950 bg-yellow-400 px-3 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
+                  <span className="text-xs sm:text-sm font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
                     {gameDisplayVal(currentGuess)}
                   </span>
                 </div>
@@ -973,8 +1049,10 @@ export const App = () => {
           </div>
         </div>
 
-        {/* 4. BOTTOM ACTION & RESULTS SECTION - Fixed height container (h-[148px]) */}
-        <div className="w-full h-[148px] shrink-0 flex flex-col items-center justify-center">
+        {/* 4. BOTTOM ACTION & RESULTS SECTION - Animated height container */}
+        <div className={`w-full shrink-0 flex flex-col items-center justify-center transition-[height] duration-500 ease-out ${
+          cardExpanded ? 'h-[148px]' : 'h-[60px]'
+        }`}>
           {/* State A: Before submitting guess */}
           {!showResults && (
             <button
@@ -1019,9 +1097,9 @@ export const App = () => {
               <button
                 type="button"
                 onClick={() => setShowCreator(true)}
-                className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center"
               >
-                <span>🎯</span> Ask For Your Own Ballpark
+                CREATE YOUR OWN
               </button>
             </div>
           )}
