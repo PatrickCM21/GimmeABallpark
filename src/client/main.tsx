@@ -88,6 +88,7 @@ export const App = () => {
   const [showResults, setShowResults] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [buttonShake, setButtonShake] = useState(false);
+  const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
 
   // User thumb shrink state:
   // Starts false when results open, quickly animates to true shrinking the 32px thumb into 14px dot on timeline
@@ -97,6 +98,12 @@ export const App = () => {
   const animFrameRef = useRef<number | null>(null);
   const userInteractedRef = useRef<boolean>(false);
   const hasGuessedInitiallyRef = useRef<boolean>(false);
+  const animTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const clearAnimTimeouts = () => {
+    animTimeoutsRef.current.forEach((t) => clearTimeout(t));
+    animTimeoutsRef.current = [];
+  };
 
   // Phased animation steps:
   // 0: Just user guess (thumb shrinking into dot, stem line & badge growing)
@@ -162,43 +169,9 @@ export const App = () => {
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
       }
+      clearAnimTimeouts();
     };
   }, []);
-
-  // Item 2 & 3: Staged sequential animation for results:
-  // Average comes out first and settles -> then Real comes out and settles -> then results section appears!
-  useEffect(() => {
-    if (!showResults || hasGuessedInitiallyRef.current) {
-      return;
-    }
-
-    // Shrink the big slider thumb into the point on the line
-    const t0 = setTimeout(() => {
-      setUserDotShrunk(true);
-    }, 60);
-
-    // Step 1: Average comes out first (~0.7s)
-    const t1 = setTimeout(() => {
-      setAnimStep(1);
-    }, 700);
-
-    // Step 2: Real comes out after Average settles (~1.8s later -> 2600ms)
-    const t2 = setTimeout(() => {
-      setAnimStep(2);
-    }, 2600);
-
-    // Step 3: Results section appears after Real settles (~1.8s later -> 4500ms)
-    const t3 = setTimeout(() => {
-      setAnimStep(3);
-    }, 4500);
-
-    return () => {
-      clearTimeout(t0);
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [showResults]);
 
   // Calculate max allowed subject length so total Reddit title <= 300 chars
   const fullTitlePrefix = `Gimme a Ballpark for ${getTitlePrefix(type)}`;
@@ -271,24 +244,73 @@ export const App = () => {
     }
   };
 
-  const handleGuessSubmit = async () => {
-    try {
+  const handleGuessSubmit = () => {
+    if (isSubmittingGuess || showResults) return;
+    setIsSubmittingGuess(true);
+    clearAnimTimeouts();
+
+    // 1. Instantly switch to results mode with player's guess
+    setShowResults(true);
+    setUserDotShrunk(false);
+    setAnimStep(0);
+
+    // 2. Animate user dot shrink and guess pop-up immediately in next tick
+    const shrinkTimer = setTimeout(() => {
+      setUserDotShrunk(true);
+    }, 50);
+    animTimeoutsRef.current.push(shrinkTimer);
+
+    // 3. Fire server request in parallel
+    const submitPromise = (async () => {
       await submitGuess(currentGuess);
-      const newData = await fetchGameData();
-      setData(newData);
-      setAnimStep(0);
-      setUserDotShrunk(false);
-      setShowResults(true);
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to submit guess');
-    }
+      return await fetchGameData();
+    })();
+
+    // 4. Minimum 600ms so user sees their ball shrink and badge pop up
+    const minDelay = new Promise((resolve) => {
+      const delayTimer = setTimeout(resolve, 600);
+      animTimeoutsRef.current.push(delayTimer);
+    });
+
+    Promise.all([submitPromise, minDelay])
+      .then(([newData]) => {
+        if (newData) {
+          setData(newData);
+        }
+        setIsSubmittingGuess(false);
+
+        // Step 1: Average guess spawns in and settles
+        setAnimStep(1);
+
+        // Step 2: Real answer spawns in after Average settles (~1.6s later)
+        const step2Timer = setTimeout(() => {
+          setAnimStep(2);
+
+          // Step 3: Results banner & Ask for ballpark CTA fade in (~1.6s later)
+          const step3Timer = setTimeout(() => {
+            setAnimStep(3);
+          }, 1600);
+          animTimeoutsRef.current.push(step3Timer);
+        }, 1600);
+        animTimeoutsRef.current.push(step2Timer);
+      })
+      .catch((e: unknown) => {
+        clearAnimTimeouts();
+        setIsSubmittingGuess(false);
+        setShowResults(false);
+        setUserDotShrunk(false);
+        setAnimStep(0);
+        showToast(e instanceof Error ? `⚠️ ${e.message}` : '⚠️ Failed to submit guess');
+      });
   };
 
   // Item 6: Dev Subreddit Reset Handler
   const handleResetGame = async () => {
     try {
+      clearAnimTimeouts();
       await fetch('/api/reset-game', { method: 'POST' });
       hasGuessedInitiallyRef.current = false;
+      setIsSubmittingGuess(false);
       setShowResults(false);
       setAnimStep(0);
       setUserDotShrunk(false);
@@ -299,7 +321,7 @@ export const App = () => {
       }
       showToast('🔄 Game reset! You can guess again.');
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : 'Failed to reset');
+      showToast(e instanceof Error ? e.message : 'Failed to reset');
     }
   };
 
@@ -680,7 +702,7 @@ export const App = () => {
   }
 
   return (
-    <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none relative">
+    <div className="h-full w-full bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none relative overflow-hidden">
       {/* Toast banner */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -688,11 +710,11 @@ export const App = () => {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950">
-        {/* Top bar: Author avatar on left + Dev Reset button on right (Item 6) */}
-        <div className="flex items-center justify-between mb-2">
+      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950 h-[480px] sm:h-[490px] max-h-full flex flex-col justify-between overflow-hidden">
+        {/* Top bar: Author avatar on left + Dev Reset button on right */}
+        <div className="flex items-center justify-between shrink-0 mb-1">
           <div className="flex items-center gap-2.5">
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
               {config.authorAvatarUrl ? (
                 <img
                   src={config.authorAvatarUrl}
@@ -723,7 +745,7 @@ export const App = () => {
             </span>
           </div>
 
-          {/* Item 6: Dev Reset Button for r/gimmeaballpark_dev */}
+          {/* Dev Reset Button for r/gimmeaballpark_dev */}
           {data.isDevSubreddit && (
             <button
               type="button"
@@ -736,229 +758,230 @@ export const App = () => {
           )}
         </div>
 
-        {/* Optional Image */}
-        {config.imageUrl && !imageError && (
-          <div className="mb-2.5 flex justify-center">
-            <img
-              src={config.imageUrl}
-              alt={config.text}
-              onError={() => setImageError(true)}
-              className="max-h-32 sm:max-h-36 max-w-full rounded-xl object-contain border border-purple-200 shadow-xs"
-            />
-          </div>
-        )}
+        {/* Question & Optional Image Container (Dynamically adapts within allocated vertical space) */}
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-1 overflow-hidden">
+          {config.imageUrl && !imageError && (
+            <div className="mb-1.5 flex justify-center max-h-24 sm:max-h-28 overflow-hidden shrink-0">
+              <img
+                src={config.imageUrl}
+                alt={config.text}
+                onError={() => setImageError(true)}
+                className="max-h-24 sm:max-h-28 w-auto rounded-xl object-contain border border-purple-200 shadow-xs"
+              />
+            </div>
+          )}
 
-        {/* Header (Item 2: bigger preamble text) */}
-        <div className="text-center mb-5 sm:mb-6">
-          <p className="text-sm sm:text-base font-black text-purple-600 uppercase tracking-wider mb-1">
-            {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
-          </p>
-          <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 leading-tight">
-            {config.type === 'percentage' && 'percentage of '}
-            {config.type === 'cost' && 'cost of '}
-            {config.type === 'count' && 'how many '}
-            <span className="text-pink-600 font-black">{config.text}</span>
-          </h1>
+          <div className="text-center px-1">
+            <p className={`font-black text-purple-600 uppercase tracking-wider ${config.imageUrl && !imageError ? 'text-xs mb-0.5' : 'text-xs sm:text-sm mb-1'}`}>
+              {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
+            </p>
+            <h1 className={`font-black uppercase text-indigo-950 leading-tight line-clamp-2 ${config.imageUrl && !imageError ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
+              {config.type === 'percentage' && 'percentage of '}
+              {config.type === 'cost' && 'cost of '}
+              {config.type === 'count' && 'how many '}
+              <span className="text-pink-600 font-black">{config.text}</span>
+            </h1>
+          </div>
         </div>
 
-        {/* Item 5: UNIFIED SLIDER & TIMELINE BAR (SAME PAGE STRUCTURE) */}
-        <div className="flex flex-col items-center w-full">
-          <div className="relative w-full py-6 mt-3">
-            {/* Active tooltip badge above thumb while guessing */}
-            {!showResults && (
-              <div
-                className="absolute -top-5 pointer-events-none flex justify-center z-20"
-                style={{
-                  left: toTrackPct(posUser),
-                  transform: 'translateX(-50%)',
-                }}
-              >
-                <span className="text-sm sm:text-base font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
-                  {gameDisplayVal(currentGuess)}
-                </span>
-              </div>
-            )}
-
-            {/* 1. USER GUESS MARKER (Big slider thumb shrinks to small point on timeline, stem line emerges behind circle) */}
-            {showResults && (
-              <div
-                className="absolute top-1/2 z-30 pointer-events-none flex items-center justify-center"
-                style={{
-                  left: toTrackPct(posUser),
-                  transform: 'translate(-50%, -50%)',
-                }}
-              >
-                {/* Stem line going UP - BEHIND circle */}
+        {/* UNIFIED SLIDER & TIMELINE BAR */}
+        <div className="flex flex-col items-center w-full shrink-0">
+          <div className="relative w-full pt-8 pb-7">
+            {/* 16px Track Container */}
+            <div className="relative w-full h-4">
+              {/* Tooltip badge while guessing */}
+              {!showResults && (
                 <div
-                  className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-indigo-950 z-0 origin-bottom transition-all duration-400 ease-out ${
-                    userDotShrunk ? 'h-6 scale-y-100 opacity-100' : 'h-0 scale-y-0 opacity-0'
-                  }`}
+                  className="absolute -top-7 pointer-events-none flex justify-center z-20"
                   style={{
-                    transitionDelay: userDotShrunk ? '200ms' : '0ms',
-                  }}
-                />
-
-                {/* Badge at top of stem */}
-                <div
-                  className={`absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30 transition-all duration-350 ease-out ${
-                    userDotShrunk ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-75 translate-y-2'
-                  }`}
-                  style={{
-                    transitionDelay: userDotShrunk ? '350ms' : '0ms',
+                    left: toTrackPct(posUser),
+                    transform: 'translateX(-50%)',
                   }}
                 >
-                  <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
-                    You: {gameDisplayVal(ug)}
+                  <span className="text-xs sm:text-sm font-black text-indigo-950 bg-yellow-400 px-3 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
+                    {gameDisplayVal(currentGuess)}
                   </span>
                 </div>
+              )}
 
-                {/* Yellow Circular Dot with Indigo border on Timeline - IN FRONT OF stem line */}
-                <div
-                  className={`relative z-10 rounded-full bg-yellow-400 border-indigo-950 transition-all duration-500 ease-out ${
-                    userDotShrunk
-                      ? 'w-3.5 h-3.5 border-2 shadow-sm'
-                      : 'w-8 h-8 border-3 shadow-md'
-                  }`}
-                  style={{
-                    transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  }}
-                />
-              </div>
-            )}
+              {/* Range Slider Track */}
+              <input
+                type="range"
+                min={rMin}
+                max={rMax}
+                value={showResults ? ug : currentGuess}
+                onChange={(e) => {
+                  if (showResults) return;
+                  userInteractedRef.current = true;
+                  if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+                  setCurrentGuess(Number(e.target.value));
+                }}
+                onPointerDown={() => {
+                  userInteractedRef.current = true;
+                  if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+                }}
+                onTouchStart={() => {
+                  userInteractedRef.current = true;
+                  if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+                }}
+                disabled={showResults}
+                className={`w-full h-4 bg-gray-200 rounded-full appearance-none outline-none z-10 relative ${
+                  showResults ? 'cursor-default opacity-80 slider-results-mode' : 'cursor-grab active:cursor-grabbing'
+                }`}
+                style={{ accentColor: '#EAB308' }}
+              />
 
-            {/* Range Slider Track */}
-            <input
-              type="range"
-              min={rMin}
-              max={rMax}
-              value={showResults ? ug : currentGuess}
-              onChange={(e) => {
-                if (showResults) return;
-                userInteractedRef.current = true;
-                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-                setCurrentGuess(Number(e.target.value));
-              }}
-              onPointerDown={() => {
-                userInteractedRef.current = true;
-                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-              }}
-              onTouchStart={() => {
-                userInteractedRef.current = true;
-                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-              }}
-              disabled={showResults}
-              className={`w-full h-4 bg-gray-200 rounded-full appearance-none outline-none z-10 relative ${
-                showResults ? 'cursor-default opacity-80 slider-results-mode' : 'cursor-grab active:cursor-grabbing'
-              }`}
-              style={{ accentColor: '#EAB308' }}
-            />
+              {/* MARKERS OVERLAY ON THE EXACT 16px TRACK (INSIDE h-4) */}
+              {showResults && (
+                <div className="absolute inset-0 pointer-events-none z-20 overflow-visible">
+                  {/* Sample guesses */}
+                  {data.stats?.samples.map((s: number, i: number) => {
+                    const clamped = Math.max(rMin, Math.min(rMax, s));
+                    const leftPct = ((clamped - rMin) / range) * 100;
+                    return (
+                      <div
+                        key={i}
+                        className="absolute w-2 h-4 bg-purple-400 opacity-40 rounded-full top-0 pointer-events-none"
+                        style={{
+                          left: `calc(16px + (100% - 32px) * (${leftPct} / 100) - 4px)`,
+                        }}
+                      />
+                    );
+                  })}
 
-            {/* RESULTS OVERLAY ON THE SAME BAR (Item 5, 6, 7, 9) */}
-            {showResults && (
-              <div className="absolute top-6 left-0 right-0 h-4 pointer-events-none z-15 overflow-visible">
-                {/* Semi-transparent sample guesses */}
-                {data.stats?.samples.map((s: number, i: number) => {
-                  const clamped = Math.max(rMin, Math.min(rMax, s));
-                  const leftPct = ((clamped - rMin) / range) * 100;
-                  return (
-                    <div
-                      key={i}
-                      className="absolute w-2 h-4 bg-purple-400 opacity-40 rounded-full top-0 pointer-events-none"
-                      style={{
-                        left: `calc(16px + (100% - 32px) * (${leftPct} / 100) - 4px)`,
-                      }}
-                    />
-                  );
-                })}
-
-                {/* 2. REAL ANSWER: Dot + Stem + Badge (Spawns from Left, Bounces smoothly) */}
-                <div
-                  className="absolute top-1/2 z-25 pointer-events-none flex items-center justify-center"
-                  style={{
-                    left: displayPosReal,
-                    opacity: realOpacity,
-                    transform: 'translate(-50%, -50%)',
-                    transition: isAnimActive
-                      ? 'left 1.8s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
-                      : 'none',
-                  }}
-                >
-                  {/* Stem line going DOWN - BEHIND circle */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-emerald-600 z-0" />
-                  {/* Badge at bottom of stem */}
-                  <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
-                    <span className="text-[11px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-500 shadow-sm">
-                      Real: {gameDisplayVal(config.answer)}
-                    </span>
-                  </div>
-                  {/* Circular Dot on Timeline - IN FRONT OF stem line */}
-                  <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
-                </div>
-
-                {/* 3. AVERAGE GUESS: Dot + Stem + Badge (Spawns from Right, Bounces smoothly, transparent if overlapping) */}
-                {data.stats && (
+                  {/* 1. REAL ANSWER (Spawns from Left, Bounces smoothly) */}
                   <div
-                    className="absolute top-1/2 z-20 pointer-events-none flex items-center justify-center"
+                    className="absolute top-1/2 z-25 pointer-events-none flex items-center justify-center"
                     style={{
-                      left: displayPosAvg,
-                      opacity: avgOpacity,
+                      left: displayPosReal,
+                      opacity: realOpacity,
                       transform: 'translate(-50%, -50%)',
                       transition: isAnimActive
-                        ? 'left 1.8s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
+                        ? 'left 1.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
                         : 'none',
                     }}
                   >
-                    {avgSide === 'top' ? (
-                      <>
-                        {/* Stem line going UP - BEHIND circle */}
-                        <div
-                          className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-blue-600 z-0 ${
-                            avgExtended ? 'h-14' : 'h-6'
-                          }`}
-                        />
-                        {/* Badge at top of stem */}
-                        <div
-                          className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30 ${
-                            avgExtended ? 'bottom-[60px]' : 'bottom-[28px]'
-                          }`}
-                        >
-                          <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
-                            Avg: {gameDisplayVal(Math.round(avgVal))}
-                          </span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {/* Stem line going DOWN - BEHIND circle */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-blue-600 z-0" />
-                        {/* Badge at bottom of stem */}
-                        <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
-                          <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
-                            Avg: {gameDisplayVal(Math.round(avgVal))}
-                          </span>
-                        </div>
-                      </>
-                    )}
+                    {/* Stem line going DOWN - BEHIND circle */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-emerald-600 z-0" />
+                    {/* Badge at bottom of stem */}
+                    <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
+                      <span className="text-[11px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-500 shadow-sm">
+                        Real: {gameDisplayVal(config.answer)}
+                      </span>
+                    </div>
                     {/* Circular Dot on Timeline - IN FRONT OF stem line */}
-                    <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                    <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* Min / Max Labels (Item 2: compact spacing) */}
-            <div className={`flex justify-between text-xs font-bold text-gray-400 uppercase ${showResults ? 'mt-7' : 'mt-2'}`}>
+                  {/* 2. AVERAGE GUESS (Spawns from Right, Bounces smoothly) */}
+                  {data.stats && (
+                    <div
+                      className="absolute top-1/2 z-20 pointer-events-none flex items-center justify-center"
+                      style={{
+                        left: displayPosAvg,
+                        opacity: avgOpacity,
+                        transform: 'translate(-50%, -50%)',
+                        transition: isAnimActive
+                          ? 'left 1.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
+                          : 'none',
+                      }}
+                    >
+                      {avgSide === 'top' ? (
+                        <>
+                          <div
+                            className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-blue-600 z-0 ${
+                              avgExtended ? 'h-14' : 'h-6'
+                            }`}
+                          />
+                          <div
+                            className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30 ${
+                              avgExtended ? 'bottom-[60px]' : 'bottom-[28px]'
+                            }`}
+                          >
+                            <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
+                              Avg: {gameDisplayVal(Math.round(avgVal))}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-blue-600 z-0" />
+                          <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
+                            <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
+                              Avg: {gameDisplayVal(Math.round(avgVal))}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                      <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                    </div>
+                  )}
+
+                  {/* 3. USER GUESS MARKER (Shrinks from 32px thumb to 14px dot ON THE TIMELINE TRACK) */}
+                  <div
+                    className="absolute top-1/2 z-30 pointer-events-none flex items-center justify-center"
+                    style={{
+                      left: toTrackPct(posUser),
+                      transform: 'translate(-50%, -50%)',
+                    }}
+                  >
+                    {/* Stem line going UP - BEHIND circle */}
+                    <div
+                      className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-indigo-950 z-0 origin-bottom transition-all duration-400 ease-out ${
+                        userDotShrunk ? 'h-6 scale-y-100 opacity-100' : 'h-0 scale-y-0 opacity-0'
+                      }`}
+                      style={{
+                        transitionDelay: userDotShrunk ? '150ms' : '0ms',
+                      }}
+                    />
+
+                    {/* Badge at top of stem */}
+                    <div
+                      className={`absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30 transition-all duration-350 ease-out ${
+                        userDotShrunk ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-75 translate-y-2'
+                      }`}
+                      style={{
+                        transitionDelay: userDotShrunk ? '250ms' : '0ms',
+                      }}
+                    >
+                      <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
+                        You: {gameDisplayVal(ug)}
+                      </span>
+                    </div>
+
+                    {/* Yellow Circular Dot with Indigo border on Timeline - IN FRONT OF stem line */}
+                    <div
+                      className={`relative z-10 rounded-full bg-yellow-400 border-indigo-950 transition-all duration-500 ease-out ${
+                        userDotShrunk
+                          ? 'w-3.5 h-3.5 border-2 shadow-sm'
+                          : 'w-8 h-8 border-3 shadow-md'
+                      }`}
+                      style={{
+                        transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Min / Max Labels */}
+            <div className="flex justify-between text-xs font-bold text-gray-400 uppercase mt-4">
               <span>{gameDisplayVal(rMin)}</span>
               <span>{gameDisplayVal(rMax)}</span>
             </div>
           </div>
+        </div>
 
-          {/* GUESS BUTTON: removed upon submitting guess (Item 5) */}
+        {/* 4. BOTTOM ACTION & RESULTS SECTION - Fixed height container (h-[148px]) */}
+        <div className="w-full h-[148px] shrink-0 flex flex-col items-center justify-center">
+          {/* State A: Before submitting guess */}
           {!showResults && (
             <button
               type="button"
               onClick={handleGuessSubmit}
-              className={`mt-6 bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer ${
+              disabled={isSubmittingGuess}
+              className={`bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer ${
                 buttonShake ? 'animate-button-shake' : ''
               }`}
             >
@@ -966,28 +989,37 @@ export const App = () => {
             </button>
           )}
 
-          {/* RESULTS SECTION: appears after Average and Real settle (Item 3 & 5) */}
+          {/* State B: During animation/loading while waiting for other answers */}
+          {showResults && !isResultsRevealed && (
+            <div className="flex flex-col items-center justify-center gap-2 py-4">
+              <div className="flex items-center gap-2 text-indigo-950/70 font-black text-xs uppercase tracking-wider animate-pulse">
+                <div className="w-2 h-2 rounded-full bg-yellow-400 animate-ping" />
+                <span>Checking the hivemind...</span>
+              </div>
+            </div>
+          )}
+
+          {/* State C: Results revealed */}
           {showResults && isResultsRevealed && (
-            <div className="w-full mt-2.5 flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
-              <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
-                <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-1">
+            <div className="w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-400">
+              <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-2.5 sm:p-3 w-full text-center shadow-xs">
+                <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-0.5">
                   {resultHeader}
                 </h2>
-                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
+                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug line-clamp-2">
                   {resultMessage}
                 </p>
                 {data.stats && (
-                  <p className="text-[11px] text-gray-500 mt-1 font-semibold">
+                  <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
                     {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
                   </p>
                 )}
               </div>
 
-              {/* "Ask For Your Own Ballpark" button (Item 1: opens maker in current window) */}
               <button
                 type="button"
                 onClick={() => setShowCreator(true)}
-                className="mt-3 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm py-2.5 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
               >
                 <span>🎯</span> Ask For Your Own Ballpark
               </button>
