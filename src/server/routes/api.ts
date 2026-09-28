@@ -172,6 +172,8 @@ api.post('/create-game', async (c) => {
       title: formattedTitle,
       subredditName: subredditName!,
       postData: lightConfig,
+      runAs: 'USER' as const,
+      userGeneratedContent: { text: formattedTitle },
     });
 
     const newCleanId = newPost.id.replace('t3_', '');
@@ -189,6 +191,7 @@ api.post('/create-game', async (c) => {
         await reddit.submitComment({
           id: newPost.id as `t3_${string}`,
           text: `💡 **Ballpark Fact / Explanation:**\n\n${fullConfig.explanation.trim()}`,
+          runAs: 'USER' as const,
         });
       } catch (commentErr) {
         console.warn("Could not post explanation comment:", commentErr);
@@ -346,5 +349,26 @@ api.post('/reset-game', async (c) => {
   } catch (error: unknown) {
     console.error("API /reset-game Error:", error);
     return c.json({ error: error instanceof Error ? error.message : "Unknown error in /reset-game" }, 500);
+  }
+});
+
+api.post('/post-comment', async (c) => {
+  try {
+    const { postId } = context;
+    if (!postId) return c.json({ error: 'postId missing' }, 400);
+
+    const { text } = await c.req.json<{ text: string }>();
+    if (!text || !text.trim()) return c.json({ error: 'text missing' }, 400);
+
+    const comment = await reddit.submitComment({
+      id: postId as `t3_${string}`,
+      text: text.trim(),
+      runAs: 'USER' as const,
+    });
+
+    return c.json({ success: true, commentId: comment.id });
+  } catch (error: unknown) {
+    console.error("API /post-comment Error:", error);
+    return c.json({ error: error instanceof Error ? error.message : "Unknown error in /post-comment" }, 500);
   }
 });
