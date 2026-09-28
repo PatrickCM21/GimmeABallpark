@@ -1,4 +1,5 @@
 import './index.css';
+import { THEME } from './theme';
 import { StrictMode, useEffect, useState, useRef, type ChangeEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
@@ -69,6 +70,13 @@ export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+
+  // Synchronize modular theme background with document and CSS variables
+  useEffect(() => {
+    document.documentElement.style.setProperty('--game-bg', THEME.background);
+    document.documentElement.style.setProperty('--color-game-bg', THEME.background);
+    document.body.style.backgroundColor = THEME.background;
+  }, []);
 
   // In-window Creator state (opens in current window without redirect)
   const [showCreator, setShowCreator] = useState(false);
@@ -386,7 +394,7 @@ export const App = () => {
   // --- 1. FULL-SCREEN ERROR STATE (PURPLE) ---
   if (error) {
     return (
-      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
+      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-4 text-center select-none">
         <div className="bg-white rounded-2xl shadow-2xl border-4 border-indigo-950 p-6 max-w-sm w-full">
           <p className="text-xl font-black uppercase text-red-600 mb-2">Error</p>
           <p className="font-semibold text-gray-700 text-sm mb-4 break-words">{error}</p>
@@ -409,7 +417,7 @@ export const App = () => {
   // --- 2. FULL-SCREEN LOADING STATE (PURPLE) ---
   if (!data) {
     return (
-      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
+      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-4 text-center select-none">
         <div className="bg-white rounded-2xl shadow-2xl border-4 border-indigo-950 p-8 max-w-sm w-full animate-pulse">
           <p className="text-xs font-black text-purple-600 uppercase tracking-widest mb-1">Gimme a Ballpark</p>
           <h2 className="text-2xl font-black uppercase text-indigo-950 mb-5">Loading Game...</h2>
@@ -424,7 +432,7 @@ export const App = () => {
     const clampedAnswer = clampAnswerToRange(answer, min, max);
 
     return (
-      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none relative">
+      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative">
         {/* Toast banner */}
         {toast && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -670,7 +678,7 @@ export const App = () => {
   // --- 4. GAME SCREEN (Item 5: EXACT SAME PAGE STRUCTURE for Guessing & Results) ---
   if (!data.configured || !data.config) {
     return (
-      <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-4 text-center select-none">
+      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-4 text-center select-none">
         <div className="bg-white rounded-2xl shadow-xl border-4 border-indigo-950 p-6 max-w-sm w-full">
           <p className="text-lg font-black uppercase text-amber-600 mb-2">Unconfigured Game</p>
           <p className="font-semibold text-gray-600 text-sm">This game post has not been configured yet.</p>
@@ -731,7 +739,12 @@ export const App = () => {
   const avgDiff = Math.abs(avgVal - config.answer);
   const isSpotOn = ug === config.answer;
   const isWithin3Percent = userDiff / range <= 0.03;
-  const isBetterThanAvg = userDiff < avgDiff;
+  const totalGuesses = data.stats?.totalGuesses ?? 0;
+  const isFirstGuesser = totalGuesses <= 1;
+  const isExactAverage =
+    !isFirstGuesser &&
+    (Math.round(ug) === Math.round(avgVal) || gameDisplayVal(ug) === gameDisplayVal(Math.round(avgVal)));
+  const isBetterThanAvg = !isSpotOn && !isWithin3Percent && !isExactAverage && userDiff < avgDiff;
 
   // Pick deterministic variation (0, 1, or 2)
   const variantIndex = Math.abs(Math.round(ug + config.answer)) % 3;
@@ -739,12 +752,38 @@ export const App = () => {
   let resultHeader: string;
   let resultMessage: string;
 
-  if (isSpotOn) {
+  if (isFirstGuesser) {
+    if (isSpotOn) {
+      resultHeader = '🎯 FIRST & SPOT ON BULLSEYE!';
+      const variations = [
+        "LEGENDARY! You're the very first guesser AND you nailed the bullseye! Take your victory lap in the comments! 👑",
+        "FIRST AND FLAWLESS! You set the bar impossibly high on guess #1! Prove you didn't cheat in the comments! 🧙‍♂️",
+        "INSTANT PERFECTION! First to play, 100% accurate down to the digit! Head to the comments and flex! 🚀",
+      ];
+      resultMessage = variations[variantIndex]!;
+    } else {
+      resultHeader = '🥇 FIRST IN THE BALLPARK!';
+      const variations = [
+        "FIRST! You're the very first person to take a swing at this! Head to the comments and see if anyone can beat your benchmark! 🥇",
+        "PIONEER STATUS! You're the first guesser on this ballpark! Drop a comment and challenge the community to beat you! 🚀",
+        "TRAILBLAZER! You set the baseline for everyone else! Head down to the comments to defend your ballpark! 💬",
+      ];
+      resultMessage = variations[variantIndex]!;
+    }
+  } else if (isSpotOn) {
     resultHeader = '🎯 SPOT ON BULLSEYE!';
     const variations = [
       "HOLY SNOO! You got it EXACTLY to the digit! That is pure wizardry! Prove you didn't cheat in the comments! 🧙‍♂️",
       'ABSOLUTE PERFECTION! Spot on down to the literal dollar/digit! Drop a comment and take your victory lap! 👑',
       "WHAT ARE THE ODDS?! You hit the exact number! That's unbelievable! Tell everyone your secret in the comments! 🔮",
+    ];
+    resultMessage = variations[variantIndex]!;
+  } else if (isExactAverage) {
+    resultHeader = '🧠 YOU ARE THE HIVEMIND!';
+    const variations = [
+      "DEAD HEAT WITH THE CROWD! Your guess matched the Reddit average down to the exact number! You are the hivemind incarnate! 🧠",
+      "PEAK REDDITOR! You guessed literally the exact community average! Drop a comment and lead your fellow thinkers! 👥",
+      "IN LOCKSTEP WITH THE CROWD! You and the hivemind think with one brain! Defend the consensus down in the comments! 💬",
     ];
     resultMessage = variations[variantIndex]!;
   } else if (isWithin3Percent) {
@@ -774,7 +813,7 @@ export const App = () => {
   }
 
   return (
-    <div className="h-full w-full bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none relative overflow-hidden">
+    <div className="min-h-full w-full bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative overflow-x-hidden overflow-y-auto">
       {/* Toast banner */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -782,9 +821,9 @@ export const App = () => {
         </div>
       )}
 
-      <div className={`bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950 flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out ${
+      <div className={`bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950 flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out my-auto shrink-0 ${
         cardExpanded
-          ? 'h-[485px] sm:h-[495px]'
+          ? (config.imageUrl && !imageError ? 'h-[575px] sm:h-[590px]' : 'h-[485px] sm:h-[495px]')
           : (config.imageUrl && !imageError ? 'h-[420px] sm:h-[430px]' : 'h-[370px] sm:h-[380px]')
       }`}>
         {/* Top bar: Author avatar on left + Dev Reset button on right */}
@@ -835,14 +874,14 @@ export const App = () => {
         </div>
 
         {/* Question & Optional Image Container (Dynamically adapts within allocated vertical space) */}
-        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-2 sm:py-3 overflow-hidden">
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-1 sm:py-2">
           {config.imageUrl && !imageError && (
-            <div className="mb-2 flex justify-center max-h-24 sm:max-h-28 overflow-hidden shrink-0">
+            <div className="mb-1.5 sm:mb-2 flex justify-center max-h-20 sm:max-h-24 overflow-hidden shrink-0">
               <img
                 src={config.imageUrl}
                 alt={config.text}
                 onError={() => setImageError(true)}
-                className="max-h-24 sm:max-h-28 w-auto rounded-xl object-contain border border-purple-200 shadow-xs"
+                className="max-h-20 sm:max-h-24 w-auto rounded-xl object-contain border border-purple-200 shadow-xs"
               />
             </div>
           )}
@@ -857,12 +896,14 @@ export const App = () => {
             </p>
             <h1 className={`font-black uppercase text-indigo-950 leading-tight break-words ${
               config.imageUrl && !imageError
-                ? 'text-xl sm:text-2xl line-clamp-2'
+                ? config.text.length < 30
+                  ? 'text-lg sm:text-xl md:text-2xl'
+                  : 'text-base sm:text-lg md:text-xl'
                 : config.text.length < 35
-                ? 'text-3xl sm:text-4xl md:text-5xl line-clamp-2'
+                ? 'text-3xl sm:text-4xl md:text-5xl'
                 : config.text.length < 65
-                ? 'text-2xl sm:text-3xl md:text-4xl line-clamp-2'
-                : 'text-xl sm:text-2xl md:text-3xl line-clamp-3'
+                ? 'text-2xl sm:text-3xl md:text-4xl'
+                : 'text-xl sm:text-2xl md:text-3xl'
             }`}>
               {config.type === 'percentage' && 'percentage of '}
               {config.type === 'cost' && 'cost of '}
@@ -874,7 +915,7 @@ export const App = () => {
 
         {/* UNIFIED SLIDER & TIMELINE BAR */}
         <div className="flex flex-col items-center w-full shrink-0">
-          <div className="relative w-full pt-10 pb-6">
+          <div className={`relative w-full ${showResults ? 'pt-14 sm:pt-16 pb-7 sm:pb-8' : 'pt-10 pb-6'}`}>
             {/* 16px Track Container */}
             <div className="relative w-full h-4">
               {/* Tooltip badge while guessing - floating above slider */}
@@ -978,12 +1019,12 @@ export const App = () => {
                         <>
                           <div
                             className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-blue-600 z-0 ${
-                              avgExtended ? 'h-14' : 'h-6'
+                              avgExtended ? 'h-13' : 'h-6'
                             }`}
                           />
                           <div
                             className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30 ${
-                              avgExtended ? 'bottom-[60px]' : 'bottom-[28px]'
+                              avgExtended ? 'bottom-[56px]' : 'bottom-[28px]'
                             }`}
                           >
                             <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
@@ -1096,7 +1137,7 @@ export const App = () => {
                 <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-0.5">
                   {resultHeader}
                 </h2>
-                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug line-clamp-2">
+                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
                   {resultMessage}
                 </p>
                 {data.stats && (

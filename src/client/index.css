@@ -1,18 +1,29 @@
 @import url('https://fonts.googleapis.com/css2?family=Reddit+Sans:ital,wght@0,200..900;1,200..900&display=swap');
 @import 'tailwindcss';
 
+@theme {
+  --color-game-bg: #1399FF;
+  --color-game-bg-dark: #0A7CD5;
+}
+
+:root {
+  --game-bg: #1399FF;
+  --game-bg-dark: #0A7CD5;
+}
+
 html, body, #root {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
-  background-color: #4a148c;
+  background-color: var(--game-bg, #1399FF);
   font-family: 'Reddit Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
