@@ -134,20 +134,6 @@ api.post('/create-game', async (c) => {
   const { postId, subredditName } = context;
   if (!postId) return c.json({ error: 'postId missing' }, 400);
 
-  const cleanCurrentId = postId.replace('t3_', '');
-  const idWithPrefix = `t3_${cleanCurrentId}`;
-
-  // Validate the request came from a Hub post
-  const [isHub1, isHub2, isHub3] = await Promise.all([
-    redis.get(`post:${postId}:isHub`),
-    redis.get(`post:${cleanCurrentId}:isHub`),
-    redis.get(`post:${idWithPrefix}:isHub`),
-  ]);
-  const isHub = isHub1 === 'true' || isHub2 === 'true' || isHub3 === 'true';
-  if (!isHub) {
-    return c.json({ error: 'only Hub posts can create games' }, 400);
-  }
-
   const config = await c.req.json<CreateGameRequest>();
   
   try {

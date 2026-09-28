@@ -66,7 +66,10 @@ export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
 
-  // Hub Setup state
+  // In-window Creator state (openable in current window without redirect)
+  const [showCreator, setShowCreator] = useState(false);
+
+  // Hub / Creator Setup state
   const [type, setType] = useState<'percentage' | 'cost' | 'count'>('percentage');
   const [text, setText] = useState('');
   const [imageMode, setImageMode] = useState<'upload' | 'link'>('upload');
@@ -79,7 +82,6 @@ export const App = () => {
   // Game state
   const [currentGuess, setCurrentGuess] = useState<number>(50);
   const [showResults, setShowResults] = useState(false);
-  const [guessResult, setGuessResult] = useState<GuessResponse | null>(null);
   const [imageError, setImageError] = useState(false);
   const [resultsAnimated, setResultsAnimated] = useState(false);
 
@@ -99,7 +101,7 @@ export const App = () => {
       });
   }, []);
 
-  // Trigger bouncy slide-in animation when results are displayed
+  // Trigger slower dynamic bouncy slide-in animation when results are displayed
   useEffect(() => {
     if (showResults) {
       const timer = setTimeout(() => {
@@ -181,8 +183,7 @@ export const App = () => {
 
   const handleGuessSubmit = async () => {
     try {
-      const res = await submitGuess(currentGuess);
-      setGuessResult(res);
+      await submitGuess(currentGuess);
       const newData = await fetchGameData();
       setData(newData);
       setShowResults(true);
@@ -227,17 +228,31 @@ export const App = () => {
     );
   }
 
-  // --- 3. HUB / CREATOR SCREEN (PURPLE) ---
-  if (data.isHub) {
+  // --- 3. CREATOR SCREEN (renders in current window for Hub OR when user clicks "Ask For Your Own Ballpark") ---
+  if (data.isHub || showCreator) {
     const clampedAnswer = clampAnswerToRange(answer, min, max);
 
     return (
       <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
         <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950">
-          {/* Bigger Gimme a Ballpark header (Game Creator Hub text removed) */}
-          <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 text-center mb-3 tracking-wide">
-            Gimme a Ballpark
-          </h1>
+          {/* Header with optional Back to Game button if opened in-window */}
+          <div className="flex items-center justify-between mb-2">
+            {showCreator && !data.isHub ? (
+              <button
+                type="button"
+                onClick={() => setShowCreator(false)}
+                className="text-xs font-black text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+              >
+                ← Back
+              </button>
+            ) : (
+              <div className="w-12" />
+            )}
+            <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 text-center tracking-wide">
+              Gimme a Ballpark
+            </h1>
+            <div className="w-12" />
+          </div>
 
           <div className="flex flex-col gap-2.5">
             {/* Dynamic Title Preview without "Live Title Preview:" text */}
@@ -459,7 +474,7 @@ export const App = () => {
   const rMax = config.max;
   const range = rMax - rMin || 1;
 
-  // Calculate percentage positions (0 to 100)
+  // Percentage positions
   const ug = data.userGuess ?? currentGuess;
   const clampedUser = Math.max(rMin, Math.min(rMax, ug));
   const posUser = ((clampedUser - rMin) / range) * 100;
@@ -471,14 +486,8 @@ export const App = () => {
   const clampedAvg = Math.max(rMin, Math.min(rMax, avgVal));
   const posAvg = ((clampedAvg - rMin) / range) * 100;
 
-  // Collision handling (Item 6):
-  // User guess is ALWAYS on TOP (side: 'top').
-  // Real answer is ALWAYS on BOTTOM (side: 'bottom').
-  // Average placement:
-  // - If close to User (<18%) and not close to Real, put Average on BOTTOM!
-  // - If close to Real (<18%) and not close to User, put Average on TOP!
-  // - If close to BOTH (all 3 clustered together), put Average on TOP with an EXTENDED stem (h-14) so it stacks above User!
-  // - Otherwise, put Average on TOP!
+  // Collision handling:
+  // User is on TOP. Real is on BOTTOM.
   const distAvgToUser = Math.abs(posAvg - posUser);
   const distAvgToReal = Math.abs(posAvg - posReal);
 
@@ -491,14 +500,64 @@ export const App = () => {
     avgExtended = true;
   }
 
-  // Animation values for dynamic spring slide-in from sides (Item 9)
+  // Slower dynamic spring slide-in values (Item 6)
   const displayPosReal = resultsAnimated ? posReal : 0;
   const displayPosAvg = resultsAnimated ? posAvg : 100;
   const dynamicOpacity = resultsAnimated ? 1 : 0;
 
+  // Transparency if overlapping (Item 4)
+  const isAvgOverlappingUser = distAvgToUser < 7;
+
+  // Calculate detailed result tier and comment-encouraging feedback (Item 3)
+  const userDiff = Math.abs(ug - config.answer);
+  const avgDiff = Math.abs(avgVal - config.answer);
+  const isSpotOn = ug === config.answer;
+  const isWithin3Percent = userDiff / range <= 0.03;
+  const isBetterThanAvg = userDiff < avgDiff;
+
+  // Pick deterministic variation (0, 1, or 2)
+  const variantIndex = Math.abs(Math.round(ug + config.answer)) % 3;
+
+  let resultHeader: string;
+  let resultMessage: string;
+
+  if (isSpotOn) {
+    resultHeader = '🎯 SPOT ON BULLSEYE!';
+    const variations = [
+      "HOLY SNOO! You got it EXACTLY to the digit! That is pure wizardry! Prove you didn't cheat in the comments! 🧙‍♂️",
+      'ABSOLUTE PERFECTION! Spot on down to the literal dollar/digit! Drop a comment and take your victory lap! 👑',
+      "WHAT ARE THE ODDS?! You hit the exact number! That's unbelievable! Tell everyone your secret in the comments! 🔮",
+    ];
+    resultMessage = variations[variantIndex]!;
+  } else if (isWithin3Percent) {
+    resultHeader = '🏆 INCREDIBLE ACCURACY!';
+    const variations = [
+      'INCREDIBLE BALLPARK! You were within 3% of the bullseye! Head to the comments and flex that big brain! 🧠',
+      "SO CLOSE IT'S SCARY! Less than 3% away from perfection! Join the discussion down in the comments! 💬",
+      'NAILED THE BALLPARK! Within 3% of the real answer! Tell us how you calculated that in the comments! 🚀',
+    ];
+    resultMessage = variations[variantIndex]!;
+  } else if (isBetterThanAvg) {
+    resultHeader = '🎉 BEAT THE HIVEMIND!';
+    const variations = [
+      'BIG BRAIN MOVE! You outsmarted the Reddit hivemind! Drop a comment and tell the crowd what they missed! 💡',
+      'ABOVE THE HIVEMIND! You beat the average Redditor guess! School the community down in the comments! 📝',
+      'SMARTER THAN AVERAGE! You were closer than the crowd! Head to the comments and join the debate! 🗣️',
+    ];
+    resultMessage = variations[variantIndex]!;
+  } else {
+    resultHeader = '😅 THE HIVEMIND TOOK THIS ONE!';
+    const variations = [
+      'THE HIVEMIND WINS! The average Redditor was closer than you this time. Defend your logic in the comments! 🤺',
+      'OUT IN LEFT FIELD! The crowd had a sharper ballpark. Drop a comment and see where your math went wrong! 🧐',
+      'OUTSMARTED BY THE CROWD! The community got the upper hand! Tell us your reasoning down in the comments! 💬',
+    ];
+    resultMessage = variations[variantIndex]!;
+  }
+
   return (
     <div className="h-full w-full min-h-screen bg-[#4a148c] flex flex-col items-center justify-center p-3 sm:p-4 select-none">
-      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-5 sm:p-6 w-full max-w-lg border-3 border-indigo-950">
+      <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950">
         {/* Author / User avatar in circle in top left with "u/x asks:" */}
         <div className="flex items-center gap-2.5 mb-2">
           <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
@@ -565,7 +624,7 @@ export const App = () => {
         {!showResults ? (
           <div className="flex flex-col items-center">
             <div className="relative w-full py-6 mt-6">
-              {/* Proportional guess tooltip (well-separated from question) */}
+              {/* Proportional guess tooltip in purple/yellow palette */}
               <div className="absolute -top-6 left-0 right-0 pointer-events-none flex justify-center">
                 <span className="text-sm sm:text-base font-black text-indigo-950 bg-yellow-400 px-3 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
                   {gameDisplayVal(currentGuess)}
@@ -602,8 +661,8 @@ export const App = () => {
         ) : (
           /* RESULTS STATE */
           <div className="flex flex-col items-center">
-            {/* Timeline with dots & stems */}
-            <div className="relative w-full my-12 sm:my-14">
+            {/* Timeline with dots & stems (tighter vertical spacing) */}
+            <div className="relative w-full my-7 sm:my-8">
               {/* Timeline Track */}
               <div className="w-full h-4 bg-gray-200 rounded-full relative overflow-visible">
                 {/* Semi-transparent sample guesses */}
@@ -619,7 +678,7 @@ export const App = () => {
                   );
                 })}
 
-                {/* 1. USER GUESS: Dot + Stem + Badge (Always on TOP) */}
+                {/* 1. USER GUESS: Matches Yellow/Purple Wheel Slider Style (Dot + Stem + Badge) */}
                 <div
                   className="absolute top-1/2 z-30 pointer-events-none"
                   style={{
@@ -629,17 +688,17 @@ export const App = () => {
                 >
                   {/* Stem line going UP */}
                   <div className="absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-indigo-950" />
-                  {/* Badge at top of stem */}
+                  {/* Badge at top of stem styled like yellow/purple wheel */}
                   <div className="absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <span className="text-[11px] font-black text-white bg-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
+                    <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
                       You: {gameDisplayVal(ug)}
                     </span>
                   </div>
-                  {/* Circular Dot on Timeline */}
-                  <div className="w-3.5 h-3.5 rounded-full bg-indigo-950 border-2 border-white shadow-sm" />
+                  {/* Yellow Circular Dot with Indigo border on Timeline */}
+                  <div className="w-3.5 h-3.5 rounded-full bg-yellow-400 border-2 border-indigo-950 shadow-sm" />
                 </div>
 
-                {/* 2. REAL ANSWER: Dot + Stem + Badge (Spawns from Left, Bounces to position) */}
+                {/* 2. REAL ANSWER: Dot + Stem + Badge (Spawns from Left, Bounces smoothly) */}
                 <div
                   className="absolute top-1/2 z-25 pointer-events-none"
                   style={{
@@ -647,7 +706,7 @@ export const App = () => {
                     opacity: dynamicOpacity,
                     transform: 'translate(-50%, -50%)',
                     transition:
-                      'left 1.1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out',
+                      'left 1.9s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.6s ease-out',
                   }}
                 >
                   {/* Stem line going DOWN */}
@@ -662,16 +721,18 @@ export const App = () => {
                   <div className="w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
                 </div>
 
-                {/* 3. AVERAGE GUESS: Dot + Stem + Badge (Spawns from Right, Bounces to position, alternates side or elevates) */}
+                {/* 3. AVERAGE GUESS: Dot + Stem + Badge (Spawns from Right, Bounces smoothly, transparent if overlapping) */}
                 {data.stats && (
                   <div
-                    className="absolute top-1/2 z-20 pointer-events-none"
+                    className={`absolute top-1/2 z-20 pointer-events-none ${
+                      isAvgOverlappingUser ? 'opacity-75' : ''
+                    }`}
                     style={{
                       left: `${displayPosAvg}%`,
-                      opacity: dynamicOpacity,
+                      opacity: isAvgOverlappingUser ? 0.75 * dynamicOpacity : dynamicOpacity,
                       transform: 'translate(-50%, -50%)',
                       transition:
-                        'left 1.25s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out',
+                        'left 2.1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.6s ease-out',
                     }}
                   >
                     {avgSide === 'top' ? (
@@ -712,41 +773,32 @@ export const App = () => {
               </div>
 
               {/* Min / Max Labels */}
-              <div className="flex justify-between mt-10 text-xs font-bold text-gray-400 uppercase">
+              <div className="flex justify-between mt-7 text-xs font-bold text-gray-400 uppercase">
                 <span>{gameDisplayVal(rMin)}</span>
                 <span>{gameDisplayVal(rMax)}</span>
               </div>
             </div>
 
-            {/* Results Banner */}
-            <div className="mt-4 bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
-              <h2 className="text-base font-black uppercase text-indigo-950 mb-0.5">Results Are In</h2>
-              {guessResult?.closerThanMajority ||
-              (data.stats &&
-                data.userGuess !== undefined &&
-                Math.abs(data.userGuess - config.answer) < Math.abs(data.stats.averageGuess - config.answer)) ? (
-                <p className="text-green-700 font-bold text-sm">🎉 You were closer than the majority of Redditors!</p>
-              ) : (
-                <p className="text-amber-800 font-bold text-sm">
-                  😅 The majority of Redditors were closer than you this time!
-                </p>
-              )}
+            {/* Results Banner (Comment-encouraging tiers) */}
+            <div className="mt-2.5 bg-purple-50 border-2 border-purple-200 rounded-xl p-3 w-full text-center shadow-xs">
+              <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-1">
+                {resultHeader}
+              </h2>
+              <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
+                {resultMessage}
+              </p>
               {data.stats && (
-                <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
+                <p className="text-[11px] text-gray-500 mt-1 font-semibold">
                   {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
                 </p>
               )}
             </div>
 
-            {/* "Ask For Your Own Ballpark" button under results */}
+            {/* "Ask For Your Own Ballpark" button (opens in-window game maker without redirect) */}
             <button
               type="button"
               onClick={() => {
-                if (data.hubUrl) {
-                  navigateTo(data.hubUrl);
-                } else {
-                  navigateTo(`https://reddit.com/r/${config.authorName || ''}`);
-                }
+                setShowCreator(true);
               }}
               className="mt-3.5 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm py-2.5 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center gap-1.5"
             >
