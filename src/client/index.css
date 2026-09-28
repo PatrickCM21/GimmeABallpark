@@ -4,11 +4,27 @@
 @theme {
   --color-game-bg: #1399FF;
   --color-game-bg-dark: #0A7CD5;
+  --color-game-border: #0F2B48;
+  --color-game-shadow: #091E33;
+  --color-game-preamble: #0284C7;
+  --color-game-highlight: #FF2A6D;
+  --color-game-text: #0F172A;
+  --color-game-thumb: #FFD000;
+  --color-game-box-bg: #F0F9FF;
+  --color-game-box-border: #BAE6FD;
 }
 
 :root {
   --game-bg: #1399FF;
   --game-bg-dark: #0A7CD5;
+  --game-border: #0F2B48;
+  --game-shadow: #091E33;
+  --game-preamble: #0284C7;
+  --game-highlight: #FF2A6D;
+  --game-text: #0F172A;
+  --game-thumb: #FFD000;
+  --game-box-bg: #F0F9FF;
+  --game-box-border: #BAE6FD;
 }
 
 html, body, #root {
@@ -16,8 +32,7 @@ html, body, #root {
   width: 100%;
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;

@@ -64,7 +64,11 @@ const formatValue = (val: number, t: 'percentage' | 'cost' | 'count') => {
 };
 
 // Maps 0-100% position onto the exact range input track bounds (accounting for 32px thumb radius)
-const toTrackPct = (pct: number) => `calc(16px + (100% - 32px) * (${pct} / 100))`;
+const toTrackPct = (pct: number) => {
+  const clamped = Math.max(0, Math.min(100, isNaN(pct) ? 50 : pct));
+  const offset = 16 - (clamped / 100) * 32;
+  return `calc(${clamped}% + ${offset.toFixed(2)}px)`;
+};
 
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
@@ -813,7 +817,7 @@ export const App = () => {
   }
 
   return (
-    <div className="min-h-full w-full bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative overflow-x-hidden overflow-y-auto">
+    <div className="h-full w-full bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative overflow-hidden">
       {/* Toast banner */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -821,9 +825,9 @@ export const App = () => {
         </div>
       )}
 
-      <div className={`bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-lg border-3 border-indigo-950 flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out my-auto shrink-0 ${
+      <div className={`bg-white rounded-2xl shadow-[0_8px_0_0_#091E33] p-4 sm:p-5 w-full max-w-lg border-3 border-[#0F2B48] flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out my-auto shrink-0 ${
         cardExpanded
-          ? (config.imageUrl && !imageError ? 'h-[575px] sm:h-[590px]' : 'h-[485px] sm:h-[495px]')
+          ? 'h-[485px] sm:h-[495px]'
           : (config.imageUrl && !imageError ? 'h-[420px] sm:h-[430px]' : 'h-[370px] sm:h-[380px]')
       }`}>
         {/* Top bar: Author avatar on left + Dev Reset button on right */}
@@ -887,47 +891,58 @@ export const App = () => {
           )}
 
           <div className="text-center px-2 w-full">
-            <p className={`font-black text-purple-600 uppercase tracking-widest ${
-              config.imageUrl && !imageError
-                ? 'text-xs sm:text-sm mb-1'
-                : 'text-sm sm:text-base md:text-lg mb-1.5'
-            }`}>
+            <p
+              className="font-black uppercase tracking-widest text-xs sm:text-sm mb-1"
+              style={{ color: THEME.preamble }}
+            >
               {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
             </p>
-            <h1 className={`font-black uppercase text-indigo-950 leading-tight break-words ${
-              config.imageUrl && !imageError
-                ? config.text.length < 30
-                  ? 'text-lg sm:text-xl md:text-2xl'
-                  : 'text-base sm:text-lg md:text-xl'
-                : config.text.length < 35
-                ? 'text-3xl sm:text-4xl md:text-5xl'
-                : config.text.length < 65
-                ? 'text-2xl sm:text-3xl md:text-4xl'
-                : 'text-xl sm:text-2xl md:text-3xl'
-            }`}>
+            <h1
+              className={`font-black uppercase leading-tight break-words ${
+                config.imageUrl && !imageError
+                  ? config.text.length < 30
+                    ? 'text-lg sm:text-xl md:text-2xl'
+                    : 'text-base sm:text-lg md:text-xl'
+                  : config.text.length < 35
+                  ? 'text-3xl sm:text-4xl md:text-5xl'
+                  : config.text.length < 65
+                  ? 'text-2xl sm:text-3xl md:text-4xl'
+                  : 'text-xl sm:text-2xl md:text-3xl'
+              }`}
+              style={{ color: THEME.questionText }}
+            >
               {config.type === 'percentage' && 'percentage of '}
               {config.type === 'cost' && 'cost of '}
               {config.type === 'count' && 'how many '}
-              <span className="text-pink-600 font-black">{config.text}</span>
+              <span className="font-black" style={{ color: THEME.questionHighlight }}>
+                {config.text}
+              </span>
             </h1>
           </div>
         </div>
 
         {/* UNIFIED SLIDER & TIMELINE BAR */}
         <div className="flex flex-col items-center w-full shrink-0">
-          <div className={`relative w-full ${showResults ? 'pt-14 sm:pt-16 pb-7 sm:pb-8' : 'pt-10 pb-6'}`}>
+          <div className="relative w-full pt-8 pb-5">
             {/* 16px Track Container */}
             <div className="relative w-full h-4">
-              {/* Tooltip badge while guessing - floating above slider */}
+              {/* Tooltip badge while guessing - floating directly above slider thumb */}
               {!showResults && (
                 <div
-                  className="absolute -top-10 pointer-events-none flex justify-center z-20"
+                  className="absolute -top-7 pointer-events-none flex justify-center z-20"
                   style={{
                     left: toTrackPct(posUser),
                     transform: 'translateX(-50%)',
                   }}
                 >
-                  <span className="text-xs sm:text-sm font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
+                  <span
+                    className="text-xs sm:text-sm font-black px-3.5 py-0.5 rounded-full shadow-sm border-2"
+                    style={{
+                      backgroundColor: THEME.guessThumb,
+                      color: THEME.guessThumbBorder,
+                      borderColor: THEME.guessThumbBorder,
+                    }}
+                  >
                     {gameDisplayVal(currentGuess)}
                   </span>
                 </div>
@@ -970,8 +985,9 @@ export const App = () => {
                     return (
                       <div
                         key={i}
-                        className="absolute w-2 h-4 bg-purple-400 opacity-40 rounded-full top-0 pointer-events-none"
+                        className="absolute w-2 h-4 opacity-40 rounded-full top-0 pointer-events-none"
                         style={{
+                          backgroundColor: THEME.sampleMarker,
                           left: `calc(16px + (100% - 32px) * (${leftPct} / 100) - 4px)`,
                         }}
                       />
@@ -1133,15 +1149,24 @@ export const App = () => {
           {/* State C: Results revealed */}
           {showResults && isResultsRevealed && (
             <div className="w-full flex flex-col items-center animate-in fade-in zoom-in-95 duration-400">
-              <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-2.5 sm:p-3 w-full text-center shadow-xs">
-                <h2 className="text-xs sm:text-sm font-black uppercase text-indigo-950 mb-0.5">
+              <div
+                className="rounded-xl p-2.5 sm:p-3 w-full text-center shadow-xs border-2"
+                style={{
+                  backgroundColor: THEME.resultBoxBg,
+                  borderColor: THEME.resultBoxBorder,
+                }}
+              >
+                <h2
+                  className="text-xs sm:text-sm font-black uppercase mb-0.5"
+                  style={{ color: THEME.resultBoxTitle }}
+                >
                   {resultHeader}
                 </h2>
                 <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
                   {resultMessage}
                 </p>
                 {data.stats && (
-                  <p className="text-[11px] text-gray-500 mt-0.5 font-semibold">
+                  <p className="text-[11px] text-sky-700 mt-0.5 font-semibold">
                     {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
                   </p>
                 )}
@@ -1150,7 +1175,11 @@ export const App = () => {
               <button
                 type="button"
                 onClick={() => setShowCreator(true)}
-                className="mt-2 w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center"
+                className="mt-2 w-full text-slate-900 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center"
+                style={{
+                  backgroundColor: THEME.createButton,
+                  borderColor: THEME.createButtonShadow,
+                }}
               >
                 CREATE YOUR OWN
               </button>
