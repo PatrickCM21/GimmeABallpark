@@ -30,29 +30,25 @@ api.get('/game-data', async (c) => {
     ]);
     const isHub = isHub1 === 'true' || isHub2 === 'true' || isHub3 === 'true';
 
-    // 2. Check for Config
+    // 2. Check for Config: Check Redis first (as Redis stores full config with images), fallback to postData
     let config: Config | undefined;
-
-    // Check context.postData first (stored directly on custom post)
-    if (context.postData && typeof context.postData === 'object' && 'type' in context.postData) {
-      config = context.postData as Config;
+    const [configStr1, configStr2, configStr3] = await Promise.all([
+      redis.get(`post:${postId}:config`),
+      redis.get(`post:${cleanId}:config`),
+      redis.get(`post:${idWithPrefix}:config`),
+    ]);
+    const configStr = configStr1 || configStr2 || configStr3;
+    if (configStr) {
+      try {
+        config = JSON.parse(configStr) as Config;
+      } catch (e) {
+        console.error("Failed to parse config from redis", e);
+      }
     }
 
-    // Check Redis if not in postData
-    if (!config) {
-      const [configStr1, configStr2, configStr3] = await Promise.all([
-        redis.get(`post:${postId}:config`),
-        redis.get(`post:${cleanId}:config`),
-        redis.get(`post:${idWithPrefix}:config`),
-      ]);
-      const configStr = configStr1 || configStr2 || configStr3;
-      if (configStr) {
-        try {
-          config = JSON.parse(configStr) as Config;
-        } catch (e) {
-          console.error("Failed to parse config from redis", e);
-        }
-      }
+    // Check context.postData fallback if not found in Redis
+    if (!config && context.postData && typeof context.postData === 'object' && 'type' in context.postData) {
+      config = context.postData as Config;
     }
 
     const configured = !!config;
@@ -167,10 +163,15 @@ api.post('/create-game', async (c) => {
       authorAvatarUrl,
     };
 
+    // Reddit gRPC submitCustomPost enforces a strict 2000-byte limit on postData!
+    // Strip raw/base64 imageUrl from postData so it stays well under 2000 bytes.
+    // The complete config (including imageUrl) is stored in Redis.
+    const { imageUrl: _strippedImage, ...lightConfig } = fullConfig;
+
     const newPost = await reddit.submitCustomPost({
       title: formattedTitle,
       subredditName: subredditName!,
-      postData: fullConfig,
+      postData: lightConfig,
     });
 
     const newCleanId = newPost.id.replace('t3_', '');

@@ -835,9 +835,9 @@ export const App = () => {
         </div>
 
         {/* Question & Optional Image Container (Dynamically adapts within allocated vertical space) */}
-        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-1 overflow-hidden">
+        <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-2 sm:py-3 overflow-hidden">
           {config.imageUrl && !imageError && (
-            <div className="mb-1.5 flex justify-center max-h-24 sm:max-h-28 overflow-hidden shrink-0">
+            <div className="mb-2 flex justify-center max-h-24 sm:max-h-28 overflow-hidden shrink-0">
               <img
                 src={config.imageUrl}
                 alt={config.text}
@@ -847,11 +847,23 @@ export const App = () => {
             </div>
           )}
 
-          <div className="text-center px-1">
-            <p className={`font-black text-purple-600 uppercase tracking-wider ${config.imageUrl && !imageError ? 'text-xs mb-0.5' : 'text-xs sm:text-sm mb-1'}`}>
+          <div className="text-center px-2 w-full">
+            <p className={`font-black text-purple-600 uppercase tracking-widest ${
+              config.imageUrl && !imageError
+                ? 'text-xs sm:text-sm mb-1'
+                : 'text-sm sm:text-base md:text-lg mb-1.5'
+            }`}>
               {config.type === 'count' ? 'Gimme a Ballpark for' : 'Gimme a Ballpark for the'}
             </p>
-            <h1 className={`font-black uppercase text-indigo-950 leading-tight line-clamp-2 ${config.imageUrl && !imageError ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'}`}>
+            <h1 className={`font-black uppercase text-indigo-950 leading-tight break-words ${
+              config.imageUrl && !imageError
+                ? 'text-xl sm:text-2xl line-clamp-2'
+                : config.text.length < 35
+                ? 'text-3xl sm:text-4xl md:text-5xl line-clamp-2'
+                : config.text.length < 65
+                ? 'text-2xl sm:text-3xl md:text-4xl line-clamp-2'
+                : 'text-xl sm:text-2xl md:text-3xl line-clamp-3'
+            }`}>
               {config.type === 'percentage' && 'percentage of '}
               {config.type === 'cost' && 'cost of '}
               {config.type === 'count' && 'how many '}
