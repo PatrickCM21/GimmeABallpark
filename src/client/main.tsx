@@ -1,5 +1,5 @@
 import './index.css';
-import { StrictMode, useEffect, useState, type ChangeEvent } from 'react';
+import { StrictMode, useEffect, useState, useRef, type ChangeEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
 import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse } from '../shared/api';
@@ -62,6 +62,9 @@ const formatValue = (val: number, t: 'percentage' | 'cost' | 'count') => {
   return val.toLocaleString();
 };
 
+// Maps 0-100% position onto the exact range input track bounds (accounting for 32px thumb radius)
+const toTrackPct = (pct: number) => `calc(16px + (100% - 32px) * (${pct} / 100))`;
+
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
@@ -86,8 +89,17 @@ export const App = () => {
   const [imageError, setImageError] = useState(false);
   const [buttonShake, setButtonShake] = useState(false);
 
+  // User thumb shrink state:
+  // Starts false when results open, quickly animates to true shrinking the 32px thumb into 14px dot on timeline
+  const [userDotShrunk, setUserDotShrunk] = useState(false);
+
+  // Animation frame and interaction refs for silky smooth intro slider shift
+  const animFrameRef = useRef<number | null>(null);
+  const userInteractedRef = useRef<boolean>(false);
+  const hasGuessedInitiallyRef = useRef<boolean>(false);
+
   // Phased animation steps:
-  // 0: Just user guess
+  // 0: Just user guess (thumb shrinking into dot, stem line & badge growing)
   // 1: Average spawns from right & settles
   // 2: Real spawns from left & settles
   // 3: Results banner & Ask for ballpark CTA fade in
@@ -107,60 +119,86 @@ export const App = () => {
           const span = d.config.max - d.config.min;
 
           if (d.userGuess !== undefined) {
+            hasGuessedInitiallyRef.current = true;
             setCurrentGuess(d.userGuess);
             setShowResults(true);
+            setUserDotShrunk(true);
             setAnimStep(3); // Already guessed previously, show full results immediately
           } else {
             setCurrentGuess(mid);
-            // Item 1: Slider moves left and right bouncing for ~1 sec before returning to middle, then button shakes!
-            const t1 = setTimeout(() => setCurrentGuess(Math.round(mid + span * 0.22)), 120);
-            const t2 = setTimeout(() => setCurrentGuess(Math.round(mid - span * 0.22)), 420);
-            const t3 = setTimeout(() => setCurrentGuess(Math.round(mid + span * 0.08)), 720);
-            const t4 = setTimeout(() => {
-              setCurrentGuess(mid);
-              setButtonShake(true);
-            }, 1000);
+            // Item 1: Silky smooth dynamic slider shift on open using requestAnimationFrame
+            userInteractedRef.current = false;
+            let startTime: number | null = null;
+            const duration = 1200;
 
-            return () => {
-              clearTimeout(t1);
-              clearTimeout(t2);
-              clearTimeout(t3);
-              clearTimeout(t4);
+            const stepAnim = (timestamp: number) => {
+              if (userInteractedRef.current) return;
+              if (!startTime) startTime = timestamp;
+              const elapsed = timestamp - startTime;
+              const p = Math.min(1, elapsed / duration);
+
+              // Damped harmonic wave: smooth dynamic shift left & right, then smoothly settles to center
+              const wave = Math.sin(p * Math.PI * 2.5) * Math.pow(1 - p, 1.5);
+              const currentVal = Math.round(mid + span * 0.18 * wave);
+              setCurrentGuess(currentVal);
+
+              if (p < 1) {
+                animFrameRef.current = requestAnimationFrame(stepAnim);
+              } else {
+                setCurrentGuess(mid);
+                setButtonShake(true);
+              }
             };
+
+            animFrameRef.current = requestAnimationFrame(stepAnim);
           }
         }
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : 'Unknown error');
       });
+
+    return () => {
+      if (animFrameRef.current) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+    };
   }, []);
 
-  // Item 3: Staged sequential animation for results:
+  // Item 2 & 3: Staged sequential animation for results:
   // Average comes out first and settles -> then Real comes out and settles -> then results section appears!
   useEffect(() => {
-    if (showResults && animStep < 3) {
-      // Step 1: Average comes out first
-      const timer1 = setTimeout(() => {
-        setAnimStep(1);
-      }, 100);
-
-      // Step 2: Real comes out after Average settles (~1.8s)
-      const timer2 = setTimeout(() => {
-        setAnimStep(2);
-      }, 1900);
-
-      // Step 3: Results section appears after Real settles (~1.8s)
-      const timer3 = setTimeout(() => {
-        setAnimStep(3);
-      }, 3700);
-
-      return () => {
-        clearTimeout(timer1);
-        clearTimeout(timer2);
-        clearTimeout(timer3);
-      };
+    if (!showResults || hasGuessedInitiallyRef.current) {
+      return;
     }
-  }, [showResults, animStep]);
+
+    // Shrink the big slider thumb into the point on the line
+    const t0 = setTimeout(() => {
+      setUserDotShrunk(true);
+    }, 60);
+
+    // Step 1: Average comes out first (~0.7s)
+    const t1 = setTimeout(() => {
+      setAnimStep(1);
+    }, 700);
+
+    // Step 2: Real comes out after Average settles (~1.8s later -> 2600ms)
+    const t2 = setTimeout(() => {
+      setAnimStep(2);
+    }, 2600);
+
+    // Step 3: Results section appears after Real settles (~1.8s later -> 4500ms)
+    const t3 = setTimeout(() => {
+      setAnimStep(3);
+    }, 4500);
+
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+  }, [showResults]);
 
   // Calculate max allowed subject length so total Reddit title <= 300 chars
   const fullTitlePrefix = `Gimme a Ballpark for ${getTitlePrefix(type)}`;
@@ -239,6 +277,7 @@ export const App = () => {
       const newData = await fetchGameData();
       setData(newData);
       setAnimStep(0);
+      setUserDotShrunk(false);
       setShowResults(true);
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Failed to submit guess');
@@ -249,8 +288,10 @@ export const App = () => {
   const handleResetGame = async () => {
     try {
       await fetch('/api/reset-game', { method: 'POST' });
+      hasGuessedInitiallyRef.current = false;
       setShowResults(false);
       setAnimStep(0);
+      setUserDotShrunk(false);
       const newData = await fetchGameData();
       setData(newData);
       if (newData.config) {
@@ -583,11 +624,12 @@ export const App = () => {
   const isAvgActive = animStep >= 1;
   const isRealActive = animStep >= 2;
   const isResultsRevealed = animStep >= 3;
+  const isAnimActive = showResults && animStep < 3;
 
-  const displayPosAvg = isAvgActive ? posAvg : 100;
+  const displayPosAvg = isAvgActive ? toTrackPct(posAvg) : 'calc(100% - 16px)';
   const avgOpacity = isAvgActive ? (distAvgToUser < 7 ? 0.75 : 1) : 0;
 
-  const displayPosReal = isRealActive ? posReal : 0;
+  const displayPosReal = isRealActive ? toTrackPct(posReal) : '16px';
   const realOpacity = isRealActive ? 1 : 0;
 
   // Calculate detailed result tier and comment-encouraging feedback (Item 3)
@@ -722,42 +764,67 @@ export const App = () => {
         {/* Item 5: UNIFIED SLIDER & TIMELINE BAR (SAME PAGE STRUCTURE) */}
         <div className="flex flex-col items-center w-full">
           <div className="relative w-full py-6 mt-3">
-            {/* 1. USER GUESS MARKER / ACTIVE TOOLTIP (Item 5: Purple/Yellow Wheel Style) */}
-            <div
-              className={`absolute left-0 right-0 pointer-events-none flex justify-center ${
-                showResults ? 'top-1/2 z-30' : '-top-5 z-20'
-              }`}
-              style={
-                showResults
-                  ? {
-                      left: `${posUser}%`,
-                      right: 'auto',
-                      transform: 'translate(-50%, -50%)',
-                    }
-                  : undefined
-              }
-            >
-              {showResults && (
-                <>
-                  {/* Stem line going UP */}
-                  <div className="absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-indigo-950" />
-                  {/* Badge at top of stem */}
-                  <div className="absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
-                    <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
-                      You: {gameDisplayVal(ug)}
-                    </span>
-                  </div>
-                  {/* Yellow Circular Dot with Indigo border on Timeline */}
-                  <div className="w-3.5 h-3.5 rounded-full bg-yellow-400 border-2 border-indigo-950 shadow-sm" />
-                </>
-              )}
-
-              {!showResults && (
+            {/* Active tooltip badge above thumb while guessing */}
+            {!showResults && (
+              <div
+                className="absolute -top-5 pointer-events-none flex justify-center z-20"
+                style={{
+                  left: toTrackPct(posUser),
+                  transform: 'translateX(-50%)',
+                }}
+              >
                 <span className="text-sm sm:text-base font-black text-indigo-950 bg-yellow-400 px-3.5 py-0.5 rounded-full shadow-sm border-2 border-indigo-950">
                   {gameDisplayVal(currentGuess)}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* 1. USER GUESS MARKER (Big slider thumb shrinks to small point on timeline, stem line emerges behind circle) */}
+            {showResults && (
+              <div
+                className="absolute top-1/2 z-30 pointer-events-none flex items-center justify-center"
+                style={{
+                  left: toTrackPct(posUser),
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                {/* Stem line going UP - BEHIND circle */}
+                <div
+                  className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-indigo-950 z-0 origin-bottom transition-all duration-400 ease-out ${
+                    userDotShrunk ? 'h-6 scale-y-100 opacity-100' : 'h-0 scale-y-0 opacity-0'
+                  }`}
+                  style={{
+                    transitionDelay: userDotShrunk ? '200ms' : '0ms',
+                  }}
+                />
+
+                {/* Badge at top of stem */}
+                <div
+                  className={`absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30 transition-all duration-350 ease-out ${
+                    userDotShrunk ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-75 translate-y-2'
+                  }`}
+                  style={{
+                    transitionDelay: userDotShrunk ? '350ms' : '0ms',
+                  }}
+                >
+                  <span className="text-[11px] font-black text-indigo-950 bg-yellow-400 border-2 border-indigo-950 px-2.5 py-0.5 rounded-full shadow-md">
+                    You: {gameDisplayVal(ug)}
+                  </span>
+                </div>
+
+                {/* Yellow Circular Dot with Indigo border on Timeline - IN FRONT OF stem line */}
+                <div
+                  className={`relative z-10 rounded-full bg-yellow-400 border-indigo-950 transition-all duration-500 ease-out ${
+                    userDotShrunk
+                      ? 'w-3.5 h-3.5 border-2 shadow-sm'
+                      : 'w-8 h-8 border-3 shadow-md'
+                  }`}
+                  style={{
+                    transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  }}
+                />
+              </div>
+            )}
 
             {/* Range Slider Track */}
             <input
@@ -765,10 +832,23 @@ export const App = () => {
               min={rMin}
               max={rMax}
               value={showResults ? ug : currentGuess}
-              onChange={(e) => !showResults && setCurrentGuess(Number(e.target.value))}
+              onChange={(e) => {
+                if (showResults) return;
+                userInteractedRef.current = true;
+                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+                setCurrentGuess(Number(e.target.value));
+              }}
+              onPointerDown={() => {
+                userInteractedRef.current = true;
+                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+              }}
+              onTouchStart={() => {
+                userInteractedRef.current = true;
+                if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+              }}
               disabled={showResults}
               className={`w-full h-4 bg-gray-200 rounded-full appearance-none outline-none z-10 relative ${
-                showResults ? 'cursor-default opacity-80' : 'cursor-grab active:cursor-grabbing'
+                showResults ? 'cursor-default opacity-80 slider-results-mode' : 'cursor-grab active:cursor-grabbing'
               }`}
               style={{ accentColor: '#EAB308' }}
             />
@@ -784,57 +864,61 @@ export const App = () => {
                     <div
                       key={i}
                       className="absolute w-2 h-4 bg-purple-400 opacity-40 rounded-full top-0 pointer-events-none"
-                      style={{ left: `calc(${leftPct}% - 4px)` }}
+                      style={{
+                        left: `calc(16px + (100% - 32px) * (${leftPct} / 100) - 4px)`,
+                      }}
                     />
                   );
                 })}
 
                 {/* 2. REAL ANSWER: Dot + Stem + Badge (Spawns from Left, Bounces smoothly) */}
                 <div
-                  className="absolute top-1/2 z-25 pointer-events-none"
+                  className="absolute top-1/2 z-25 pointer-events-none flex items-center justify-center"
                   style={{
-                    left: `${displayPosReal}%`,
+                    left: displayPosReal,
                     opacity: realOpacity,
                     transform: 'translate(-50%, -50%)',
-                    transition:
-                      'left 1.9s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out',
+                    transition: isAnimActive
+                      ? 'left 1.8s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
+                      : 'none',
                   }}
                 >
-                  {/* Stem line going DOWN */}
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-emerald-600" />
+                  {/* Stem line going DOWN - BEHIND circle */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-emerald-600 z-0" />
                   {/* Badge at bottom of stem */}
-                  <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
+                  <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
                     <span className="text-[11px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-500 shadow-sm">
                       Real: {gameDisplayVal(config.answer)}
                     </span>
                   </div>
-                  {/* Circular Dot on Timeline */}
-                  <div className="w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
+                  {/* Circular Dot on Timeline - IN FRONT OF stem line */}
+                  <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
                 </div>
 
                 {/* 3. AVERAGE GUESS: Dot + Stem + Badge (Spawns from Right, Bounces smoothly, transparent if overlapping) */}
                 {data.stats && (
                   <div
-                    className="absolute top-1/2 z-20 pointer-events-none"
+                    className="absolute top-1/2 z-20 pointer-events-none flex items-center justify-center"
                     style={{
-                      left: `${displayPosAvg}%`,
+                      left: displayPosAvg,
                       opacity: avgOpacity,
                       transform: 'translate(-50%, -50%)',
-                      transition:
-                        'left 2.1s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.5s ease-out',
+                      transition: isAnimActive
+                        ? 'left 1.8s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
+                        : 'none',
                     }}
                   >
                     {avgSide === 'top' ? (
                       <>
-                        {/* Stem line going UP */}
+                        {/* Stem line going UP - BEHIND circle */}
                         <div
-                          className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-blue-600 ${
+                          className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-blue-600 z-0 ${
                             avgExtended ? 'h-14' : 'h-6'
                           }`}
                         />
                         {/* Badge at top of stem */}
                         <div
-                          className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap ${
+                          className={`absolute left-1/2 -translate-x-1/2 whitespace-nowrap z-30 ${
                             avgExtended ? 'bottom-[60px]' : 'bottom-[28px]'
                           }`}
                         >
@@ -845,18 +929,18 @@ export const App = () => {
                       </>
                     ) : (
                       <>
-                        {/* Stem line going DOWN */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-blue-600" />
+                        {/* Stem line going DOWN - BEHIND circle */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-blue-600 z-0" />
                         {/* Badge at bottom of stem */}
-                        <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap">
+                        <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
                           <span className="text-[11px] font-black text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-400 shadow-sm">
                             Avg: {gameDisplayVal(Math.round(avgVal))}
                           </span>
                         </div>
                       </>
                     )}
-                    {/* Circular Dot on Timeline */}
-                    <div className="w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
+                    {/* Circular Dot on Timeline - IN FRONT OF stem line */}
+                    <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-blue-600 border-2 border-white shadow-sm" />
                   </div>
                 )}
               </div>
