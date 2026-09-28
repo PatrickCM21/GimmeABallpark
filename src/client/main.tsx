@@ -4,7 +4,8 @@ import { StrictMode, useEffect, useState, useRef, type ChangeEvent, type Pointer
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
 import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse, Config } from '../shared/api';
-import { getDailyBallpark, getRandomBallpark } from '../shared/data/ballparks';
+import { getDailyBallpark } from '../shared/data/ballparks';
+import { getRandomCreatorBallpark } from '../shared/data/randomBallparks';
 
 const fetchGameData = async () => {
   const res = await fetch('/api/game-data');
@@ -96,7 +97,7 @@ export const App = () => {
   const [max, setMax] = useState(100);
   const [answer, setAnswer] = useState(50);
   const [explanation, setExplanation] = useState('');
-  const [showExplanationInput, setShowExplanationInput] = useState(false);
+  const [showFactModal, setShowFactModal] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   // Image Crop Modal state
@@ -220,10 +221,9 @@ export const App = () => {
   const previewTitle = `Gimme a Ballpark for ${getTitlePrefix(type)}${text.trim() || '[subject]'}`;
 
   const getPreviewTitleClass = (len: number) => {
-    if (len < 35) return 'text-base sm:text-lg';
-    if (len < 70) return 'text-sm sm:text-base';
-    if (len < 120) return 'text-xs sm:text-sm';
-    return 'text-[11px] leading-tight';
+    if (len < 30) return 'text-xs sm:text-sm';
+    if (len < 60) return 'text-[11px] sm:text-xs';
+    return 'text-[10px] leading-tight';
   };
 
   // Image Crop Handlers
@@ -358,8 +358,9 @@ export const App = () => {
   };
 
   // Prevent page scroll while image crop modal is active
+  // Prevent page scroll while image crop modal or fact modal is active
   useEffect(() => {
-    if (showCropModal) {
+    if (showCropModal || showFactModal) {
       const prevOverflow = document.body.style.overflow;
       const prevTouchAction = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
@@ -369,7 +370,7 @@ export const App = () => {
         document.body.style.touchAction = prevTouchAction;
       };
     }
-  }, [showCropModal]);
+  }, [showCropModal, showFactModal]);
 
   // Non-passive touch listener on crop container to prevent mobile page scrolling while panning
   useEffect(() => {
@@ -432,19 +433,32 @@ export const App = () => {
     return Math.max(curMin, Math.min(curMax, val));
   };
 
-  // Quick Random Idea from the 300 verified options
+  // Quick Random Idea strictly from the 100 dedicated random options (Request 2 & 4: no toast)
   const handlePickRandomIdea = () => {
-    const idea = getRandomBallpark();
+    const idea = getRandomCreatorBallpark();
     setType(idea.type);
     setText(idea.text);
     setMin(idea.min);
     setMax(idea.max);
     setAnswer(idea.answer);
     if (idea.explanation) {
-      setExplanation(idea.explanation);
-      setShowExplanationInput(true);
+      setExplanation(idea.explanation.slice(0, 100));
+    } else {
+      setExplanation('');
     }
-    showToast(`🎲 Idea loaded: "${idea.text}"`);
+  };
+
+  // Reset all options back to blank/nothing (Request 3)
+  const handleResetCreator = () => {
+    setText('');
+    setType('percentage');
+    setMin(0);
+    setMax(100);
+    setAnswer(50);
+    setImageUrl('');
+    setCropSrc('');
+    setImageError(false);
+    setExplanation('');
   };
 
   const handleCreateSubmit = async () => {
@@ -612,430 +626,10 @@ export const App = () => {
     );
   }
 
-  // --- 3. CREATOR SCREEN (renders when user clicks "CREATE YOUR OWN" or in Hub mode) ---
-  if (data.isHub || showCreator) {
-    const clampedAnswer = clampAnswerToRange(answer, min, max);
+  const isCreatorMode = Boolean(data.isHub || showCreator);
+  const clampedAnswer = clampAnswerToRange(answer, min, max);
 
-    return (
-      <div
-        key="creator-screen"
-        className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative animate-in fade-in duration-300"
-      >
-        {/* Toast banner */}
-        {toast && (
-          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
-            <span>{toast}</span>
-          </div>
-        )}
-
-        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_#0A7CD5] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950 animate-in fade-in zoom-in-95 duration-300 max-h-[95vh] overflow-y-auto">
-          {/* Header with optional Back to Game button */}
-          <div className="flex items-center justify-between mb-2">
-            {showCreator && !data.isHub ? (
-              <button
-                type="button"
-                onClick={() => setShowCreator(false)}
-                className="text-xs font-black text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
-              >
-                ← Back
-              </button>
-            ) : (
-              <div className="w-12" />
-            )}
-            <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 text-center tracking-wide">
-              Gimme a Ballpark
-            </h1>
-            <button
-              type="button"
-              onClick={handlePickRandomIdea}
-              title="Pick a random question from 300 verified options"
-              className="text-xs font-black text-indigo-900 bg-yellow-400 hover:bg-yellow-300 px-2 py-1 rounded-lg border border-indigo-950 shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
-            >
-              <span>🎲</span>
-              <span className="hidden sm:inline">Idea</span>
-            </button>
-          </div>
-
-          <div className="flex flex-col gap-2.5">
-            {/* Dynamic Title Preview */}
-            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-2 text-center min-h-[42px] flex items-center justify-center overflow-hidden">
-              <span
-                className={`${getPreviewTitleClass(
-                  previewTitle.length
-                )} font-black text-indigo-950 break-words leading-tight`}
-              >
-                Gimme a Ballpark for {getTitlePrefix(type)}
-                <span className="text-pink-600">{text.trim() || '[subject]'}</span>
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 items-start">
-              {/* Type Select */}
-              <div className="col-span-1">
-                <div className="flex items-center mb-1 h-4">
-                  <label className="font-bold text-xs text-gray-700 uppercase">Type</label>
-                </div>
-                <select
-                  value={type}
-                  onChange={(e) => {
-                    const val = e.target.value as 'percentage' | 'cost' | 'count';
-                    setType(val);
-                    if (val === 'percentage') {
-                      setMin(0);
-                      setMax(100);
-                      setAnswer(50);
-                    } else if (val === 'cost') {
-                      setMin(0);
-                      setMax(1000);
-                      setAnswer(250);
-                    } else {
-                      setMin(0);
-                      setMax(1000);
-                      setAnswer(500);
-                    }
-                  }}
-                  className="w-full h-10 px-2.5 bg-gray-50 rounded-xl font-bold text-xs sm:text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs cursor-pointer focus:border-indigo-900 transition-colors"
-                >
-                  <option value="percentage">Percentage</option>
-                  <option value="cost">Cost</option>
-                  <option value="count">How Many</option>
-                </select>
-              </div>
-
-              {/* Subject Input */}
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-1 h-4">
-                  <label className="font-bold text-xs text-gray-700 uppercase">Subject</label>
-                  <span className="text-[10px] font-semibold text-gray-400">
-                    {text.length}/{maxSubjectLength}
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  value={text}
-                  maxLength={maxSubjectLength}
-                  onChange={(e) => setText(e.target.value)}
-                  placeholder={getPlaceholder(type)}
-                  className="w-full h-10 px-2.5 bg-gray-50 rounded-xl font-bold text-xs sm:text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs focus:border-indigo-900 placeholder:text-gray-400 placeholder:font-normal transition-colors"
-                />
-              </div>
-            </div>
-
-            {/* Single-line Image Trigger & Preview */}
-            <div className="h-11 px-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex items-center justify-between gap-2 shrink-0">
-              <span className="font-bold text-xs text-gray-700 uppercase whitespace-nowrap">Image (Optional)</span>
-              {imageUrl ? (
-                <div className="flex items-center gap-1.5 h-7">
-                  <img
-                    src={imageUrl}
-                    alt="Cropped Preview"
-                    className="w-12 h-7 object-cover rounded border border-indigo-200 shadow-xs shrink-0"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleOpenCropModal}
-                    className="h-7 px-2.5 text-xs font-bold rounded-lg bg-white text-indigo-950 border border-indigo-300 hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
-                  >
-                    Edit Crop
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImageUrl('');
-                      setCropSrc('');
-                    }}
-                    className="h-7 w-7 flex items-center justify-center text-xs font-black text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                    title="Remove Image"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenCropModal}
-                  className="h-7 px-3 text-xs font-bold rounded-lg border border-indigo-300 bg-white text-indigo-900 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span className="text-xs">📷</span>
-                  <span>Add / Crop Image</span>
-                </button>
-              )}
-            </div>
-
-            {/* Min Guess & Max Guess */}
-            <div className="grid grid-cols-2 gap-2 items-start">
-              <div>
-                <div className="flex items-center mb-1 h-4">
-                  <label className="font-bold text-xs text-gray-700 uppercase">Min Guess</label>
-                </div>
-                <input
-                  type="number"
-                  value={type === 'percentage' ? 0 : min}
-                  disabled={type === 'percentage'}
-                  readOnly={type === 'percentage'}
-                  onChange={(e) => {
-                    if (type === 'percentage') return;
-                    const newMin = Number(e.target.value);
-                    setMin(newMin);
-                    if (answer < newMin) setAnswer(newMin);
-                  }}
-                  className={`w-full h-10 px-2.5 rounded-xl font-bold text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs ${
-                    type === 'percentage'
-                      ? 'bg-gray-200/80 border-gray-300 text-gray-500 cursor-not-allowed select-none'
-                      : 'bg-gray-50'
-                  }`}
-                />
-              </div>
-              <div>
-                <div className="flex items-center mb-1 h-4">
-                  <label className="font-bold text-xs text-gray-700 uppercase">Max Guess</label>
-                </div>
-                <input
-                  type="number"
-                  value={type === 'percentage' ? 100 : max}
-                  disabled={type === 'percentage'}
-                  readOnly={type === 'percentage'}
-                  onChange={(e) => {
-                    if (type === 'percentage') return;
-                    const newMax = Number(e.target.value);
-                    setMax(newMax);
-                    if (answer > newMax) setAnswer(newMax);
-                  }}
-                  className={`w-full h-10 px-2.5 rounded-xl font-bold text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs ${
-                    type === 'percentage'
-                      ? 'bg-gray-200/80 border-gray-300 text-gray-500 cursor-not-allowed select-none'
-                      : 'bg-gray-50'
-                  }`}
-                />
-              </div>
-            </div>
-
-            {/* Real Answer (with Slider and Number Input) */}
-            <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-2.5">
-              <div className="flex justify-between items-center mb-1">
-                <label className="font-bold text-xs text-gray-700 uppercase">Real Answer</label>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-400">
-                    {formatValue(clampedAnswer, type)}
-                  </span>
-                  <input
-                    type="number"
-                    min={min}
-                    max={max}
-                    value={answer}
-                    onChange={(e) => setAnswer(Number(e.target.value))}
-                    onBlur={() => setAnswer(clampedAnswer)}
-                    className="w-24 p-1 bg-white rounded font-bold text-xs text-emerald-800 outline-none border border-emerald-400 text-right"
-                  />
-                </div>
-              </div>
-
-              {/* Slider for real answer */}
-              <input
-                type="range"
-                min={min}
-                max={max}
-                value={clampedAnswer}
-                onChange={(e) => setAnswer(Number(e.target.value))}
-                className="w-full h-3 bg-gray-200 rounded-full appearance-none outline-none cursor-pointer mt-1"
-                style={{ accentColor: '#10B981' }}
-              />
-            </div>
-
-            {/* Explanation / Fact Option (Button to click and type, posted as Reddit comment) */}
-            <div className="pt-0.5">
-              {!showExplanationInput ? (
-                <button
-                  type="button"
-                  onClick={() => setShowExplanationInput(true)}
-                  className="w-full py-2 px-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-300 text-purple-900 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
-                >
-                  <span>💡</span>
-                  <span>{explanation.trim() ? 'Edit Fact / Explanation' : 'Add Explanation / Fact (Posted as Comment)'}</span>
-                </button>
-              ) : (
-                <div className="bg-purple-50/90 border-2 border-purple-200 rounded-xl p-2.5 flex flex-col gap-1.5 animate-in fade-in duration-200">
-                  <div className="flex items-center justify-between">
-                    <label className="font-bold text-xs text-indigo-950 uppercase flex items-center gap-1.5">
-                      <span>💡</span>
-                      <span>Fact / Explanation (Posted as Comment)</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setShowExplanationInput(false)}
-                      className="text-[11px] font-bold text-purple-700 hover:text-purple-900 cursor-pointer"
-                    >
-                      {explanation.trim() ? 'Done' : '✕ Cancel'}
-                    </button>
-                  </div>
-                  <textarea
-                    value={explanation}
-                    maxLength={500}
-                    onChange={(e) => setExplanation(e.target.value)}
-                    placeholder="Share a fascinating fact, backstory, or verification that will be automatically posted as a comment on your thread..."
-                    rows={2}
-                    className="w-full p-2 bg-white rounded-lg font-medium text-xs text-indigo-950 outline-none border border-purple-200 focus:border-purple-400 placeholder:text-gray-400 resize-none transition-colors"
-                  />
-                  <div className="flex items-center justify-between text-[10px] text-gray-500 font-semibold px-0.5">
-                    <span>Automatically posted to comments on post launch</span>
-                    <span>{explanation.length}/500</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Create Game button */}
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={handleCreateSubmit}
-                disabled={isCreating}
-                className="w-full bg-yellow-400 hover:bg-yellow-300 text-indigo-950 uppercase font-black text-sm sm:text-base py-3 rounded-xl border-b-4 border-yellow-600 active:translate-y-0.5 active:brightness-95 transition-transform disabled:opacity-50 cursor-pointer shadow-md"
-              >
-                {isCreating ? 'Creating Post...' : '🚀 Create Game Post'}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Hidden file input for crop modal */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleCropFileChange}
-        />
-
-        {/* Crop Modal Overlay */}
-        {showCropModal && (
-          <div
-            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 select-none animate-in fade-in duration-200 touch-none overscroll-none"
-            onTouchMove={(e) => {
-              if (e.cancelable) e.preventDefault();
-            }}
-          >
-            <div className="bg-white rounded-2xl p-4 sm:p-5 w-full max-w-sm border-3 border-indigo-950 shadow-2xl flex flex-col items-center">
-              <div className="w-full flex items-center justify-between mb-2">
-                <h2 className="text-base sm:text-lg font-black uppercase text-indigo-950 tracking-wide">
-                  Crop Question Image
-                </h2>
-                <button
-                  type="button"
-                  onClick={() => setShowCropModal(false)}
-                  className="text-gray-400 hover:text-gray-700 text-lg font-bold p-1 cursor-pointer"
-                >
-                  ✕
-                </button>
-              </div>
-
-              <p className="text-[11px] text-gray-500 font-semibold mb-3 text-center">
-                This is how your image will appear in the game card.
-              </p>
-
-              {cropSrc ? (
-                <div className="flex flex-col items-center w-full">
-                  <div
-                    ref={cropContainerRef}
-                    className="w-[260px] h-[130px] rounded-xl border-2 border-indigo-950 overflow-hidden relative cursor-grab active:cursor-grabbing bg-slate-900 shadow-inner touch-none select-none overscroll-none"
-                    style={{ touchAction: 'none' }}
-                    onPointerDown={handleCropPointerDown}
-                    onPointerMove={handleCropPointerMove}
-                    onPointerUp={handleCropPointerUp}
-                    onPointerCancel={handleCropPointerUp}
-                  >
-                    <img
-                      ref={cropImageRef}
-                      src={cropSrc}
-                      alt="Crop target"
-                      draggable={false}
-                      style={{
-                        position: 'absolute',
-                        left: 0,
-                        top: 0,
-                        width: `${cropImgDims.w}px`,
-                        height: `${cropImgDims.h}px`,
-                        transformOrigin: '0 0',
-                        transform: `translate(${cropPos.x}px, ${cropPos.y}px) scale(${cropScale})`,
-                        userSelect: 'none',
-                        pointerEvents: 'none',
-                        maxWidth: 'none',
-                      }}
-                    />
-                    <div className="absolute inset-0 pointer-events-none border border-white/25 rounded-xl" />
-                  </div>
-
-                  <span className="text-[10px] font-bold text-gray-400 uppercase mt-1.5 tracking-wider">
-                    Drag to reposition
-                  </span>
-
-                  {/* Zoom Controls */}
-                  <div className="w-[260px] flex items-center gap-2 mt-2">
-                    <span className="text-xs text-gray-500 font-bold select-none">−</span>
-                    <input
-                      type="range"
-                      min={cropBaseScale}
-                      max={cropBaseScale * 3}
-                      step={(cropBaseScale * 2) / 100}
-                      value={cropScale}
-                      onChange={(e) => handleCropZoomChange(Number(e.target.value))}
-                      className="flex-1 accent-indigo-600 h-1.5 bg-gray-200 rounded-lg cursor-pointer"
-                    />
-                    <span className="text-xs text-gray-500 font-bold select-none">+</span>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-[260px] h-[130px] rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50/60 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-100/70 transition-colors p-4 text-center shadow-xs"
-                >
-                  <span className="text-3xl mb-1">📷</span>
-                  <span className="text-xs font-bold text-indigo-950 uppercase">Choose Image File</span>
-                  <span className="text-[10px] text-gray-500 mt-0.5">Tap here to select an image</span>
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="w-full flex items-center justify-between gap-2 mt-4 pt-2 border-t border-gray-100">
-                {cropSrc ? (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
-                  >
-                    Change Image
-                  </button>
-                ) : (
-                  <div />
-                )}
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowCropModal(false)}
-                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  {cropSrc && (
-                    <button
-                      type="button"
-                      onClick={handleSaveCrop}
-                      className="px-4 py-1.5 text-xs font-black uppercase rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs cursor-pointer"
-                    >
-                      Save Crop
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // --- 4. GAME SCREEN: PURE SINGLE-QUESTION BEHAVIOUR ---
+  // --- 3. GAME CALCULATIONS ---
   const config = data.config || DEFAULT_BALLPARK;
   const gameDisplayVal = (val: number) => formatValue(val, config.type);
 
@@ -1095,75 +689,79 @@ export const App = () => {
     (Math.round(ug) === Math.round(avgVal) || gameDisplayVal(ug) === gameDisplayVal(Math.round(avgVal)));
   const isBetterThanAvg = !isSpotOn && !isWithin3Percent && !isExactAverage && userDiff < avgDiff;
 
-  const variantIndex = Math.abs(Math.round(ug + config.answer)) % 3;
+  const variantIndex = Math.abs(Math.round(ug + config.answer));
 
-  let resultHeader: string;
-  let resultMessage: string;
+  let resultStatement: string;
 
   if (isFirstGuesser) {
     if (isSpotOn) {
-      resultHeader = '🎯 FIRST & SPOT ON BULLSEYE!';
       const variations = [
-        "LEGENDARY! You're the very first guesser AND you nailed the bullseye! Take your victory lap in the comments! 👑",
-        "FIRST AND FLAWLESS! You set the bar impossibly high on guess #1! Prove you didn't cheat in the comments! 🧙‍♂️",
-        "INSTANT PERFECTION! First to play, 100% accurate down to the digit! Head to the comments and flex! 🚀",
+        "🎯 FIRST & SPOT ON! Nailed the exact bullseye on guess #1! 👑",
+        "🧙‍♂️ FIRST & FLAWLESS! Set the bar impossibly high on guess #1! 🚀",
+        "🚀 INSTANT PERFECTION! First to play, 100% accurate to the digit! ✨",
+        "👑 LEGENDARY START! First swing and dead-center bullseye! 🎯",
       ];
-      resultMessage = variations[variantIndex]!;
+      resultStatement = variations[variantIndex % variations.length]!;
     } else {
-      resultHeader = '🥇 FIRST IN THE BALLPARK!';
       const variations = [
-        "FIRST! You're the very first person to take a swing at this! Head to the comments and see if anyone can beat your benchmark! 🥇",
-        "PIONEER STATUS! You're the first guesser on this ballpark! Drop a comment and challenge the community to beat you! 🚀",
-        "TRAILBLAZER! You set the baseline for everyone else! Head down to the comments to defend your ballpark! 💬",
+        "🥇 FIRST IN THE BALLPARK! You set the benchmark for Reddit! 🚀",
+        "🥇 PIONEER STATUS! First swing on this ballpark—can anyone beat you? 💬",
+        "🥇 TRAILBLAZER! You set the baseline for everyone else! 🎯",
+        "🥇 FIRST GUESS SUBMITTED! Drop a comment to defend your estimate! 🗣️",
+        "🥇 NUMBER ONE! You're the very first person to take a swing! 🌟",
+        "🥇 GROUND FLOOR! You're the benchmark everyone else is chasing! 🏃",
       ];
-      resultMessage = variations[variantIndex]!;
+      resultStatement = variations[variantIndex % variations.length]!;
     }
   } else if (isSpotOn) {
-    resultHeader = '🎯 SPOT ON BULLSEYE!';
     const variations = [
-      "HOLY SNOO! You got it EXACTLY to the digit! That is pure wizardry! Prove you didn't cheat in the comments! 🧙‍♂️",
-      'ABSOLUTE PERFECTION! Spot on down to the literal dollar/digit! Drop a comment and take your victory lap! 👑',
-      "WHAT ARE THE ODDS?! You hit the exact number! That's unbelievable! Tell everyone your secret in the comments! 🔮",
+      "🎯 SPOT ON BULLSEYE! Pure wizardry down to the digit! 🧙‍♂️",
+      "👑 ABSOLUTE PERFECTION! Exact match down to the digit! 🏆",
+      "🔮 WHAT ARE THE ODDS?! You nailed the exact number! ✨",
+      "🎯 100% DEAD CENTER! Drop a comment and take your victory lap! 🚀",
+      "💎 FLAWLESS GUESS! Precision of a seasoned expert! 👑",
     ];
-    resultMessage = variations[variantIndex]!;
+    resultStatement = variations[variantIndex % variations.length]!;
   } else if (isExactAverage) {
-    resultHeader = '🧠 YOU ARE THE HIVEMIND!';
     const variations = [
-      "DEAD HEAT WITH THE CROWD! Your guess matched the Reddit average down to the exact number! You are the hivemind incarnate! 🧠",
-      "PEAK REDDITOR! You guessed literally the exact community average! Drop a comment and lead your fellow thinkers! 👥",
-      "IN LOCKSTEP WITH THE CROWD! You and the hivemind think with one brain! Defend the consensus down in the comments! 💬",
+      "🧠 YOU ARE THE HIVEMIND! Matched the community average down to the digit! 👥",
+      "🧠 PEAK REDDITOR! Exactly in sync with the Reddit crowd average! 💬",
+      "🧠 IN LOCKSTEP WITH THE CROWD! You and the hivemind think as one! 🤝",
+      "🧠 SYNCHRONIZED MINDS! Dead heat with the crowd average! 🌐",
     ];
-    resultMessage = variations[variantIndex]!;
+    resultStatement = variations[variantIndex % variations.length]!;
   } else if (isWithin3Percent) {
-    resultHeader = '🏆 INCREDIBLE ACCURACY!';
     const variations = [
-      'INCREDIBLE BALLPARK! You were within 3% of the bullseye! Head to the comments and flex that big brain! 🧠',
-      "SO CLOSE IT'S SCARY! Less than 3% away from perfection! Join the discussion down in the comments! 💬",
-      'NAILED THE BALLPARK! Within 3% of the real answer! Tell us how you calculated that in the comments! 🚀',
+      "🏆 INCREDIBLE ACCURACY! Within 3% of the real answer! 🧠",
+      "🔥 SO CLOSE IT'S SCARY! Less than 3% away from perfection! 🎯",
+      "👏 NAILED THE BALLPARK! Razor-thin margin from the bullseye! 🚀",
+      "🌟 ALMOST SPOT ON! Within 3%—head to the comments to flex! 💬",
+      "💎 ELITE ESTIMATE! You practically hit the exact number! 🏆",
     ];
-    resultMessage = variations[variantIndex]!;
+    resultStatement = variations[variantIndex % variations.length]!;
   } else if (isBetterThanAvg) {
-    resultHeader = '🎉 BEAT THE HIVEMIND!';
     const variations = [
-      'BIG BRAIN MOVE! You outsmarted the Reddit hivemind! Drop a comment and tell the crowd what they missed! 💡',
-      'ABOVE THE HIVEMIND! You beat the average Redditor guess! School the community down in the comments! 📝',
-      'SMARTER THAN AVERAGE! You were closer than the crowd! Head to the comments and join the debate! 🗣️',
+      "🎉 BEAT THE HIVEMIND! You were closer than the crowd! 💡",
+      "🧠 BIG BRAIN MOVE! You outsmarted the average Redditor! 🚀",
+      "🗣️ SMARTER THAN AVERAGE! Closer to reality than the crowd! 🌟",
+      "🏆 ABOVE THE CONSENSUS! You beat the Reddit average! 👏",
+      "📝 SCHOOL THE CROWD! Your estimate beat the hivemind! 💬",
     ];
-    resultMessage = variations[variantIndex]!;
+    resultStatement = variations[variantIndex % variations.length]!;
   } else {
-    resultHeader = '😅 THE HIVEMIND TOOK THIS ONE!';
     const variations = [
-      'CLOSE CALL! The hivemind had the edge this time, but you were definitely in the ballpark! Defend your estimate in the comments! 💬',
-      'THE CROWD WINS! Reddit hivemind was closer this round, but great swing! Head to the comments to see how others guessed! 👥',
-      'RESPECTABLE EFFORT! The collective wisdom beat you by a hair! Join the lively discussion down in the comments! 🍿',
+      "😅 CLOSE CALL! The hivemind edged you out this time! 💬",
+      "👥 THE CROWD WINS! Reddit hivemind had the edge this round! 🍿",
+      "🤝 RESPECTABLE EFFORT! The collective wisdom beat you by a hair! 🗣️",
+      "📊 IN THE BALLPARK! But the hivemind was slightly closer! 👥",
+      "🍿 GREAT SWING! Head to the comments to see how others guessed! 💬",
     ];
-    resultMessage = variations[variantIndex]!;
+    resultStatement = variations[variantIndex % variations.length]!;
   }
 
   return (
     <div
-      key="game-screen"
-      className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative animate-in fade-in duration-300"
+      className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative"
     >
       {/* Toast banner */}
       {toast && (
@@ -1172,16 +770,317 @@ export const App = () => {
         </div>
       )}
 
-      {/* Main Single Question Game Card */}
+      {/* Main Persistent Card Container (Smoothly extends or shortens without fading out) */}
       <div
-        className={`bg-white rounded-2xl shadow-[0_8px_0_0_#0A7CD5] p-4 sm:p-5 w-full max-w-lg border-3 border-[#0F2B48] flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out my-auto animate-in fade-in zoom-in-95 duration-300 ${
-          cardExpanded
-            ? 'h-[490px] sm:h-[510px]'
-            : config.imageUrl && !imageError
-            ? 'h-[420px] sm:h-[430px]'
-            : 'h-[375px] sm:h-[385px]'
+        className={`bg-white rounded-2xl shadow-[0_8px_0_0_#0A7CD5] border-3 border-[#0F2B48] flex flex-col justify-between overflow-hidden transition-all duration-400 ease-out my-auto ${
+          isCreatorMode
+            ? 'w-full max-w-md p-3 sm:p-4 h-[440px] sm:h-[455px]'
+            : `w-full max-w-lg p-4 sm:p-5 ${
+                cardExpanded
+                  ? config.imageUrl && !imageError
+                    ? config.explanation
+                      ? 'h-[530px] sm:h-[550px]'
+                      : 'h-[495px] sm:h-[515px]'
+                    : config.explanation
+                    ? 'h-[480px] sm:h-[495px]'
+                    : 'h-[450px] sm:h-[465px]'
+                  : config.imageUrl && !imageError
+                  ? 'h-[415px] sm:h-[425px]'
+                  : 'h-[375px] sm:h-[385px]'
+              }`
         }`}
       >
+        {isCreatorMode ? (
+          <div key="creator-content" className="h-full w-full flex flex-col justify-between animate-fade-in overflow-hidden">
+          {/* Header with optional Back to Game button */}
+          <div className="flex items-center justify-between mb-1 shrink-0">
+            {showCreator && !data.isHub ? (
+              <button
+                type="button"
+                onClick={() => setShowCreator(false)}
+                className="text-xs font-black text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+              >
+                ← Back
+              </button>
+            ) : (
+              <div className="w-12" />
+            )}
+            <h1 className="text-lg sm:text-xl font-black uppercase text-indigo-950 text-center tracking-wide">
+              Gimme a Ballpark
+            </h1>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Black and white outlined Die button for 100 random ballparks */}
+              <button
+                type="button"
+                onClick={handlePickRandomIdea}
+                title="Pick a random question (from 100 dedicated options)"
+                className="text-[11px] font-black text-slate-900 bg-yellow-400 hover:bg-yellow-300 px-2 py-1 rounded-lg border-2 border-slate-900 shadow-2xs cursor-pointer flex items-center gap-1.5 active:translate-y-0.5 transition-transform"
+              >
+                {/* Custom Crisp Black & White Outlined Die Icon */}
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                  <rect x="2" y="2" width="20" height="20" rx="4" fill="#FFFFFF" stroke="#000000" strokeWidth="2.5" />
+                  <circle cx="6.5" cy="6.5" r="1.75" fill="#000000" />
+                  <circle cx="17.5" cy="6.5" r="1.75" fill="#000000" />
+                  <circle cx="12" cy="12" r="1.75" fill="#000000" />
+                  <circle cx="6.5" cy="17.5" r="1.75" fill="#000000" />
+                  <circle cx="17.5" cy="17.5" r="1.75" fill="#000000" />
+                </svg>
+                <span className="hidden sm:inline font-black uppercase text-[10px]">Random</span>
+              </button>
+
+              {/* Reset button next to the die that resets all options back to nothing */}
+              <button
+                type="button"
+                onClick={handleResetCreator}
+                title="Reset all fields to blank"
+                className="text-[11px] font-bold text-gray-700 hover:text-red-700 bg-gray-100 hover:bg-red-50 px-2 py-1 rounded-lg border-2 border-gray-400 hover:border-red-400 shadow-2xs cursor-pointer flex items-center gap-1 active:translate-y-0.5 transition-colors"
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+                <span className="hidden sm:inline font-bold uppercase text-[10px]">Reset</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5 sm:gap-2">
+            {/* Dynamic Title Preview (Fixed height so it never pushes layout) */}
+            <div className="bg-purple-50 border-2 border-purple-200 rounded-xl px-2.5 py-1 text-center h-[42px] max-h-[42px] flex items-center justify-center overflow-hidden shrink-0">
+              <span
+                className={`${getPreviewTitleClass(
+                  previewTitle.length
+                )} font-black text-indigo-950 line-clamp-2 leading-tight`}
+              >
+                Gimme a Ballpark for {getTitlePrefix(type)}
+                <span className="text-pink-600">{text.trim() || '[subject]'}</span>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 items-start">
+              {/* Type Select */}
+              <div className="col-span-1">
+                <div className="flex items-center mb-0.5 h-3.5">
+                  <label className="font-bold text-[10px] sm:text-[11px] text-gray-700 uppercase">Type</label>
+                </div>
+                <select
+                  value={type}
+                  onChange={(e) => {
+                    const val = e.target.value as 'percentage' | 'cost' | 'count';
+                    setType(val);
+                    if (val === 'percentage') {
+                      setMin(0);
+                      setMax(100);
+                      setAnswer(50);
+                    } else if (val === 'cost') {
+                      setMin(0);
+                      setMax(1000);
+                      setAnswer(250);
+                    } else {
+                      setMin(0);
+                      setMax(1000);
+                      setAnswer(500);
+                    }
+                  }}
+                  className="w-full h-8 sm:h-8.5 px-2 bg-gray-50 rounded-lg font-bold text-xs text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs cursor-pointer focus:border-indigo-900 transition-colors"
+                >
+                  <option value="percentage">Percentage</option>
+                  <option value="cost">Cost</option>
+                  <option value="count">How Many</option>
+                </select>
+              </div>
+
+              {/* Subject Input */}
+              <div className="col-span-2">
+                <div className="flex justify-between items-center mb-0.5 h-3.5">
+                  <label className="font-bold text-[10px] sm:text-[11px] text-gray-700 uppercase">Subject</label>
+                  <span className="text-[10px] font-semibold text-gray-400">
+                    {text.length}/{maxSubjectLength}
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  value={text}
+                  maxLength={maxSubjectLength}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={getPlaceholder(type)}
+                  className="w-full h-8 sm:h-8.5 px-2 bg-gray-50 rounded-lg font-bold text-xs text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs focus:border-indigo-900 placeholder:text-gray-400 placeholder:font-normal transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Single-line Image Trigger & Preview */}
+            <div className="h-7 sm:h-8 px-2.5 bg-indigo-50/60 rounded-lg border border-indigo-100 flex items-center justify-between gap-2 shrink-0">
+              <span className="font-bold text-[10px] sm:text-[11px] text-gray-700 uppercase whitespace-nowrap">Image (Optional)</span>
+              {imageUrl ? (
+                <div className="flex items-center gap-1.5 h-6">
+                  <img
+                    src={imageUrl}
+                    alt="Cropped Preview"
+                    className="w-10 h-6 object-cover rounded border border-indigo-200 shadow-xs shrink-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleOpenCropModal}
+                    className="h-6 px-2 text-[11px] font-bold rounded bg-white text-indigo-950 border border-indigo-300 hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImageUrl('');
+                      setCropSrc('');
+                    }}
+                    className="h-6 w-6 flex items-center justify-center text-xs font-black text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                    title="Remove Image"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenCropModal}
+                  className="h-6 px-2.5 text-[11px] font-bold rounded border border-indigo-300 bg-white text-indigo-900 hover:bg-indigo-50 transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  <span>📷</span>
+                  <span>Add / Crop Image</span>
+                </button>
+              )}
+            </div>
+
+            {/* Min Guess & Max Guess */}
+            <div className="grid grid-cols-2 gap-2 items-start">
+              <div>
+                <div className="flex items-center mb-0.5 h-3.5">
+                  <label className="font-bold text-[10px] sm:text-[11px] text-gray-700 uppercase">Min Guess</label>
+                </div>
+                <input
+                  type="number"
+                  value={type === 'percentage' ? 0 : min}
+                  disabled={type === 'percentage'}
+                  readOnly={type === 'percentage'}
+                  onChange={(e) => {
+                    if (type === 'percentage') return;
+                    const newMin = Number(e.target.value);
+                    setMin(newMin);
+                    if (answer < newMin) setAnswer(newMin);
+                  }}
+                  className={`w-full h-8 sm:h-8.5 px-2 rounded-lg font-bold text-xs text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs ${
+                    type === 'percentage'
+                      ? 'bg-gray-200/80 border-gray-300 text-gray-500 cursor-not-allowed select-none'
+                      : 'bg-gray-50'
+                  }`}
+                />
+              </div>
+              <div>
+                <div className="flex items-center mb-0.5 h-3.5">
+                  <label className="font-bold text-[10px] sm:text-[11px] text-gray-700 uppercase">Max Guess</label>
+                </div>
+                <input
+                  type="number"
+                  value={type === 'percentage' ? 100 : max}
+                  disabled={type === 'percentage'}
+                  readOnly={type === 'percentage'}
+                  onChange={(e) => {
+                    if (type === 'percentage') return;
+                    const newMax = Number(e.target.value);
+                    setMax(newMax);
+                    if (answer > newMax) setAnswer(newMax);
+                  }}
+                  className={`w-full h-8 sm:h-8.5 px-2 rounded-lg font-bold text-xs text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs ${
+                    type === 'percentage'
+                      ? 'bg-gray-200/80 border-gray-300 text-gray-500 cursor-not-allowed select-none'
+                      : 'bg-gray-50'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Real Answer (with Slider and Number Input) */}
+            <div className="bg-purple-50/70 border border-purple-200 rounded-lg p-1.5 sm:p-2 shrink-0">
+              <div className="flex justify-between items-center mb-0.5">
+                <label className="font-bold text-[10px] sm:text-[11px] text-gray-700 uppercase">Real Answer</label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-black text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-400">
+                    {formatValue(clampedAnswer, type)}
+                  </span>
+                  <input
+                    type="number"
+                    min={min}
+                    max={max}
+                    value={answer}
+                    onChange={(e) => setAnswer(Number(e.target.value))}
+                    onBlur={() => setAnswer(clampedAnswer)}
+                    className="w-20 p-0.5 bg-white rounded font-bold text-[11px] text-emerald-800 outline-none border border-emerald-400 text-right"
+                  />
+                </div>
+              </div>
+
+              {/* Slider for real answer */}
+              <input
+                type="range"
+                min={min}
+                max={max}
+                value={clampedAnswer}
+                onChange={(e) => setAnswer(Number(e.target.value))}
+                className="w-full h-2.5 bg-gray-200 rounded-full appearance-none outline-none cursor-pointer mt-0.5"
+                style={{ accentColor: '#10B981' }}
+              />
+            </div>
+
+            {/* Fact Section: Single-row button opening Popup Modal */}
+            <div className="shrink-0 flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowFactModal(true)}
+                className="flex-1 h-7 sm:h-8 px-2.5 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-300 text-purple-950 rounded-lg font-bold text-[11px] sm:text-xs flex items-center justify-between cursor-pointer transition-colors shadow-2xs"
+              >
+                <span className="flex items-center gap-1.5 truncate">
+                  <span>💡</span>
+                  <span className="truncate">
+                    {explanation.trim() ? `Fact: "${explanation.trim()}"` : 'Add a Fact (Optional)'}
+                  </span>
+                </span>
+                <span className="text-[10px] font-bold text-purple-700 shrink-0">
+                  {explanation.trim() ? 'Edit' : '+'}
+                </span>
+              </button>
+              {explanation.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setExplanation('')}
+                  className="h-7 sm:h-8 w-7 sm:w-8 flex items-center justify-center text-xs font-black text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg border border-red-200 transition-colors cursor-pointer shrink-0"
+                  title="Remove Fact"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Create Game button */}
+          <div className="pt-1 shrink-0">
+            <button
+              type="button"
+              onClick={handleCreateSubmit}
+              disabled={isCreating}
+              className="w-full text-white uppercase font-black text-xs sm:text-sm py-2 sm:py-2.5 px-6 rounded-xl bg-green-500 hover:bg-green-400 border-b-4 border-green-700 active:translate-y-0.5 active:border-b-2 transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+            >
+              {isCreating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Launching Ballpark...</span>
+                </>
+              ) : (
+                <span>CREATE BALLPARK 🚀</span>
+              )}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div key="game-content" className="h-full w-full flex flex-col justify-between animate-fade-in overflow-hidden">
         {/* Top bar: Author info on left + Dev Reset button on right */}
         <div className="flex items-center justify-between shrink-0 mb-1">
           <div className="flex items-center gap-2">
@@ -1449,7 +1348,11 @@ export const App = () => {
         {/* BOTTOM ACTION & RESULTS SECTION */}
         <div
           className={`w-full shrink-0 flex flex-col items-center justify-center transition-[height] duration-500 ease-out ${
-            cardExpanded ? 'h-[155px] sm:h-[165px]' : 'h-[60px]'
+            cardExpanded
+              ? config.explanation
+                ? 'h-[145px] sm:h-[155px]'
+                : 'h-[115px] sm:h-[125px]'
+              : 'h-[60px]'
           }`}
         >
           {/* State A: Before submitting guess */}
@@ -1478,7 +1381,7 @@ export const App = () => {
 
           {/* State C: Results revealed */}
           {showResults && isResultsRevealed && (
-            <div className="w-full flex flex-col items-center max-h-[155px] sm:max-h-[165px] overflow-y-auto pr-0.5">
+            <div className="w-full flex flex-col items-center overflow-hidden">
               <div
                 className="animate-pop-bounce rounded-xl p-2 sm:p-2.5 w-full text-center shadow-xs border-2 shrink-0"
                 style={{
@@ -1487,22 +1390,19 @@ export const App = () => {
                 }}
               >
                 <h2
-                  className="text-xs sm:text-sm font-black uppercase mb-0.5"
+                  className="text-xs sm:text-sm font-black uppercase tracking-tight leading-snug"
                   style={{ color: THEME.resultBoxTitle }}
                 >
-                  {resultHeader}
+                  {resultStatement}
                 </h2>
-                <p className="text-[11px] sm:text-xs font-bold text-gray-800 leading-snug">
-                  {resultMessage}
-                </p>
 
                 {/* Verified Explanation / Fact Card */}
                 {config.explanation && (
-                  <div className="mt-1.5 p-2 bg-amber-50/90 border border-amber-300 rounded-lg text-left shadow-2xs">
-                    <span className="font-bold text-amber-900 block text-[10px] uppercase tracking-wide">
-                      💡 Did You Know?
+                  <div className="mt-1.5 p-1.5 sm:p-2 bg-amber-50/90 border border-amber-300 rounded-lg text-left shadow-2xs shrink-0">
+                    <span className="font-bold text-amber-900 block text-[10px] sm:text-[11px] leading-tight">
+                      💡 u/{config.authorName || 'the creator'} wanted you to know:
                     </span>
-                    <p className="text-[11px] text-gray-800 leading-tight mt-0.5">
+                    <p className="text-[10px] sm:text-[11px] text-gray-800 leading-tight mt-0.5">
                       {config.explanation}
                     </p>
                   </div>
@@ -1524,8 +1424,222 @@ export const App = () => {
           )}
         </div>
       </div>
+    )}
+  </div>
+
+  {/* Hidden file input for crop modal */}
+  <input
+    ref={fileInputRef}
+    type="file"
+    accept="image/*"
+    className="hidden"
+    onChange={handleCropFileChange}
+  />
+
+  {/* Crop Modal Overlay */}
+  {showCropModal && (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 select-none animate-in fade-in duration-200 touch-none overscroll-none"
+      onTouchMove={(e) => {
+        if (e.cancelable) e.preventDefault();
+      }}
+    >
+      <div className="bg-white rounded-2xl p-4 sm:p-5 w-full max-w-sm border-3 border-indigo-950 shadow-2xl flex flex-col items-center">
+        <div className="w-full flex items-center justify-between mb-2">
+          <h2 className="text-base sm:text-lg font-black uppercase text-indigo-950 tracking-wide">
+            Crop Question Image
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowCropModal(false)}
+            className="text-gray-400 hover:text-gray-700 text-lg font-bold p-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="text-[11px] text-gray-500 font-semibold mb-3 text-center">
+          This is how your image will appear in the game card.
+        </p>
+
+        {cropSrc ? (
+          <div className="flex flex-col items-center w-full">
+            <div
+              ref={cropContainerRef}
+              className="w-[260px] h-[130px] rounded-xl border-2 border-indigo-950 overflow-hidden relative cursor-grab active:cursor-grabbing bg-slate-900 shadow-inner touch-none select-none overscroll-none"
+              style={{ touchAction: 'none' }}
+              onPointerDown={handleCropPointerDown}
+              onPointerMove={handleCropPointerMove}
+              onPointerUp={handleCropPointerUp}
+              onPointerCancel={handleCropPointerUp}
+            >
+              <img
+                ref={cropImageRef}
+                src={cropSrc}
+                alt="Crop target"
+                draggable={false}
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  width: `${cropImgDims.w}px`,
+                  height: `${cropImgDims.h}px`,
+                  transformOrigin: '0 0',
+                  transform: `translate(${cropPos.x}px, ${cropPos.y}px) scale(${cropScale})`,
+                  userSelect: 'none',
+                  pointerEvents: 'none',
+                  maxWidth: 'none',
+                }}
+              />
+              <div className="absolute inset-0 pointer-events-none border border-white/25 rounded-xl" />
+            </div>
+
+            <span className="text-[10px] font-bold text-gray-400 uppercase mt-1.5 tracking-wider">
+              Drag to reposition
+            </span>
+
+            {/* Zoom Controls */}
+            <div className="w-[260px] flex items-center gap-2 mt-2">
+              <span className="text-xs text-gray-500 font-bold select-none">−</span>
+              <input
+                type="range"
+                min={cropBaseScale}
+                max={cropBaseScale * 3}
+                step={(cropBaseScale * 2) / 100}
+                value={cropScale}
+                onChange={(e) => handleCropZoomChange(Number(e.target.value))}
+                className="flex-1 accent-indigo-600 h-1.5 bg-gray-200 rounded-lg cursor-pointer"
+              />
+              <span className="text-xs text-gray-500 font-bold select-none">+</span>
+            </div>
+          </div>
+        ) : (
+          <div
+            onClick={() => fileInputRef.current?.click()}
+            className="w-[260px] h-[130px] rounded-xl border-2 border-dashed border-indigo-300 bg-indigo-50/60 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-100/70 transition-colors p-4 text-center shadow-xs"
+          >
+            <span className="text-3xl mb-1">📷</span>
+            <span className="text-xs font-bold text-indigo-950 uppercase">Choose Image File</span>
+            <span className="text-[10px] text-gray-500 mt-0.5">Tap here to select an image</span>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="w-full flex items-center justify-between gap-2 mt-4 pt-2 border-t border-gray-100">
+          {cropSrc ? (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
+            >
+              Change Image
+            </button>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowCropModal(false)}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            {cropSrc && (
+              <button
+                type="button"
+                onClick={handleSaveCrop}
+                className="px-4 py-1.5 text-xs font-black uppercase rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs cursor-pointer"
+              >
+                Save Crop
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
-  );
+  )}
+
+  {/* Fact Textbox Popup Modal */}
+  {showFactModal && (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 select-none animate-in fade-in duration-200 touch-none overscroll-none"
+      onTouchMove={(e) => {
+        if (e.cancelable) e.preventDefault();
+      }}
+    >
+      <div className="bg-white rounded-2xl p-4 sm:p-5 w-full max-w-sm border-3 border-indigo-950 shadow-2xl flex flex-col animate-card-enter">
+        <div className="w-full flex items-center justify-between mb-2">
+          <h2 className="text-base sm:text-lg font-black uppercase text-indigo-950 tracking-wide flex items-center gap-1.5">
+            <span>💡</span>
+            <span>Add a Fact</span>
+          </h2>
+          <button
+            type="button"
+            onClick={() => setShowFactModal(false)}
+            className="text-gray-400 hover:text-gray-700 text-lg font-bold p-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <p className="text-[11px] text-gray-500 font-semibold mb-3 text-center">
+          Share an interesting fact or backstory for this ballpark (max 100 characters).
+        </p>
+
+        <div className="flex flex-col gap-1 w-full">
+          <div className="flex justify-between items-center mb-0.5">
+            <label className="font-bold text-xs text-gray-700 uppercase">Fact / Backstory</label>
+            <span className="text-[10px] font-bold text-gray-400">
+              {explanation.length}/100
+            </span>
+          </div>
+          <textarea
+            value={explanation}
+            maxLength={100}
+            onChange={(e) => setExplanation(e.target.value)}
+            placeholder="e.g. In 2024, the world record was officially confirmed..."
+            rows={3}
+            className="w-full p-2.5 bg-gray-50 rounded-xl font-bold text-xs sm:text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs focus:border-indigo-900 focus:bg-white placeholder:text-gray-400 placeholder:font-normal resize-none transition-colors"
+          />
+        </div>
+
+        <div className="w-full flex items-center justify-between gap-2 mt-4 pt-2 border-t border-gray-100">
+          {explanation.trim() ? (
+            <button
+              type="button"
+              onClick={() => setExplanation('')}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+            >
+              Clear Fact
+            </button>
+          ) : (
+            <div />
+          )}
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowFactModal(false)}
+              className="px-3 py-1.5 text-xs font-bold rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFactModal(false)}
+              className="px-4 py-1.5 text-xs font-black uppercase rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition-colors shadow-xs cursor-pointer"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+</div>
+);
 };
 
 createRoot(document.getElementById('root')!).render(

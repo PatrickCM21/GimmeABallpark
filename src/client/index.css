@@ -176,7 +176,7 @@ input[type="range"].slider-results-mode::-moz-range-thumb {
 }
 
 .animate-fade-in {
-  animation: screenFadeIn 0.3s ease-out both;
+  animation: screenFadeIn 0.2s ease-out both;
 }
 
 .animate-card-enter {
