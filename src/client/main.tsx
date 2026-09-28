@@ -508,7 +508,7 @@ export const App = () => {
     const clampedAnswer = clampAnswerToRange(answer, min, max);
 
     return (
-      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative">
+      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative animate-in fade-in duration-300">
         {/* Toast banner */}
         {toast && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -516,7 +516,7 @@ export const App = () => {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950">
+        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950 animate-in fade-in zoom-in-95 duration-300">
           {/* Header with optional Back to Game button if opened in-window */}
           <div className="flex items-center justify-between mb-2">
             {showCreator && !data.isHub ? (
@@ -601,20 +601,20 @@ export const App = () => {
               </div>
             </div>
 
-            {/* Single-line Image Trigger & Preview (compact for mobile) */}
-            <div className="flex items-center justify-between gap-2 bg-indigo-50/60 px-3 py-2 rounded-xl border border-indigo-100">
+            {/* Single-line Image Trigger & Preview (compact for mobile, fixed height prevents shifting) */}
+            <div className="h-11 px-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex items-center justify-between gap-2 shrink-0">
               <span className="font-bold text-xs text-gray-700 uppercase whitespace-nowrap">Image (Optional)</span>
               {imageUrl ? (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 h-7">
                   <img
                     src={imageUrl}
                     alt="Cropped Preview"
-                    className="w-12 h-6 object-cover rounded border border-indigo-200 shadow-xs"
+                    className="w-12 h-7 object-cover rounded border border-indigo-200 shadow-xs shrink-0"
                   />
                   <button
                     type="button"
                     onClick={handleOpenCropModal}
-                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-white text-indigo-950 border border-indigo-300 hover:bg-indigo-50 transition-colors cursor-pointer"
+                    className="h-7 px-2.5 text-xs font-bold rounded-lg bg-white text-indigo-950 border border-indigo-300 hover:bg-indigo-50 transition-colors cursor-pointer flex items-center justify-center"
                   >
                     Edit Crop
                   </button>
@@ -624,7 +624,7 @@ export const App = () => {
                       setImageUrl('');
                       setCropSrc('');
                     }}
-                    className="p-1 text-xs font-black text-red-500 hover:text-red-700 cursor-pointer"
+                    className="h-7 w-7 flex items-center justify-center text-xs font-black text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                     title="Remove Image"
                   >
                     ✕
@@ -634,9 +634,9 @@ export const App = () => {
                 <button
                   type="button"
                   onClick={handleOpenCropModal}
-                  className="py-1 px-3 text-xs font-black uppercase rounded-lg border-2 border-dashed border-indigo-300 bg-white text-indigo-900 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="h-7 px-3 text-xs font-bold rounded-lg border border-indigo-300 bg-white text-indigo-900 hover:bg-indigo-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  <span>📷</span>
+                  <span className="text-xs">📷</span>
                   <span>Add / Crop Image</span>
                 </button>
               )}
@@ -1319,7 +1319,7 @@ export const App = () => {
               type="button"
               onClick={handleGuessSubmit}
               disabled={isSubmittingGuess}
-              className={`bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full border-b-4 border-green-700 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md w-full max-w-xs cursor-pointer ${
+              className={`bg-green-500 hover:bg-green-400 text-white uppercase font-black text-base sm:text-lg py-3 px-10 rounded-full shadow-[0_5px_0_0_#15803d] active:translate-y-[4px] active:shadow-[0_1px_0_0_#15803d] transition-all duration-75 w-full max-w-xs cursor-pointer select-none ${
                 buttonShake ? 'animate-button-shake' : ''
               }`}
             >
