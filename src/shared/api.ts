@@ -7,6 +7,7 @@ export type Config = {
   min: number;
   max: number;
   answer: number;
+  explanation?: string | undefined;
 };
 
 export type GameDataResponse = {

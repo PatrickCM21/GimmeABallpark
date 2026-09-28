@@ -3,7 +3,8 @@ import { THEME } from './theme';
 import { StrictMode, useEffect, useState, useRef, type ChangeEvent, type PointerEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
-import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse } from '../shared/api';
+import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse, Config } from '../shared/api';
+import { getDailyBallpark, getRandomBallpark } from '../shared/data/ballparks';
 
 const fetchGameData = async () => {
   const res = await fetch('/api/game-data');
@@ -70,6 +71,8 @@ const toTrackPct = (pct: number) => {
   return `calc(${clamped}% + ${offset.toFixed(2)}px)`;
 };
 
+const DEFAULT_BALLPARK: Config = getDailyBallpark();
+
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
@@ -92,6 +95,8 @@ export const App = () => {
   const [min, setMin] = useState(0);
   const [max, setMax] = useState(100);
   const [answer, setAnswer] = useState(50);
+  const [explanation, setExplanation] = useState('');
+  const [showExplanationInput, setShowExplanationInput] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   // Image Crop Modal state
@@ -108,6 +113,7 @@ export const App = () => {
   });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cropImageRef = useRef<HTMLImageElement | null>(null);
+  const cropContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Game state
   const [currentGuess, setCurrentGuess] = useState<number>(50);
@@ -148,9 +154,10 @@ export const App = () => {
     fetchGameData()
       .then((d) => {
         setData(d);
-        if (d.config) {
-          const mid = Math.round((d.config.min + d.config.max) / 2);
-          const span = d.config.max - d.config.min;
+        const activeCfg = d.config || (!d.isHub ? DEFAULT_BALLPARK : undefined);
+        if (activeCfg) {
+          const mid = Math.round((activeCfg.min + activeCfg.max) / 2);
+          const span = activeCfg.max - activeCfg.min;
 
           if (d.userGuess !== undefined) {
             hasGuessedInitiallyRef.current = true;
@@ -162,7 +169,6 @@ export const App = () => {
           } else {
             setCurrentGuess(mid);
             setCardExpanded(false);
-            // Item 1: Silky smooth dynamic slider shift on open using requestAnimationFrame
             userInteractedRef.current = false;
             let startTime: number | null = null;
             const duration = 1200;
@@ -191,7 +197,13 @@ export const App = () => {
         }
       })
       .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : 'Unknown error');
+        // Fallback for standalone/offline testing
+        setData({ isHub: false, configured: true, config: DEFAULT_BALLPARK });
+        const mid = Math.round((DEFAULT_BALLPARK.min + DEFAULT_BALLPARK.max) / 2);
+        setCurrentGuess(mid);
+        if (e instanceof Error && !e.message.includes('Failed to fetch')) {
+          setError(e.message);
+        }
       });
 
     return () => {
@@ -202,10 +214,9 @@ export const App = () => {
     };
   }, []);
 
-  // Calculate max allowed subject length so total Reddit title <= 300 chars
+  // Title length and preview
   const fullTitlePrefix = `Gimme a Ballpark for ${getTitlePrefix(type)}`;
   const maxSubjectLength = Math.max(50, 300 - fullTitlePrefix.length);
-
   const previewTitle = `Gimme a Ballpark for ${getTitlePrefix(type)}${text.trim() || '[subject]'}`;
 
   const getPreviewTitleClass = (len: number) => {
@@ -215,6 +226,7 @@ export const App = () => {
     return 'text-[11px] leading-tight';
   };
 
+  // Image Crop Handlers
   const CROP_CW = 260;
   const CROP_CH = 130;
 
@@ -285,7 +297,7 @@ export const App = () => {
       try {
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {
-        // Ignored: pointer capture may have been released automatically
+        // Pointer capture may have already been released
       }
     }
   };
@@ -293,8 +305,6 @@ export const App = () => {
   const handleCropZoomChange = (newVal: number) => {
     if (!cropImgDims.w) return;
     const newScale = Math.max(cropBaseScale, newVal);
-
-    // Keep center of crop container stationary during zoom
     const centerX = (CROP_CW / 2 - cropPos.x) / cropScale;
     const centerY = (CROP_CH / 2 - cropPos.y) / cropScale;
 
@@ -311,40 +321,133 @@ export const App = () => {
   };
 
   const handleSaveCrop = () => {
-    if (!cropImageRef.current || !cropImgDims.w) return;
+    if (!cropSrc || !cropImgDims.w || !cropImageRef.current) {
+      setShowCropModal(false);
+      return;
+    }
 
-    const outCanvas = document.createElement('canvas');
-    const outW = 520;
-    const outH = 260;
-    outCanvas.width = outW;
-    outCanvas.height = outH;
-    const ctx = outCanvas.getContext('2d');
-    if (!ctx) return;
+    try {
+      const canvas = document.createElement('canvas');
+      const targetW = 520;
+      const targetH = 260;
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        setShowCropModal(false);
+        return;
+      }
 
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, outW, outH);
+      const img = cropImageRef.current;
+      const sx = (-cropPos.x / cropScale);
+      const sy = (-cropPos.y / cropScale);
+      const sWidth = CROP_CW / cropScale;
+      const sHeight = CROP_CH / cropScale;
 
-    const ratio = outW / CROP_CW; // 2
-    ctx.drawImage(
-      cropImageRef.current,
-      cropPos.x * ratio,
-      cropPos.y * ratio,
-      cropImgDims.w * cropScale * ratio,
-      cropImgDims.h * cropScale * ratio
-    );
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, targetW, targetH);
 
-    const finalDataUrl = outCanvas.toDataURL('image/jpeg', 0.85);
-    setImageUrl(finalDataUrl);
-    setShowCropModal(false);
-    showToast('✅ Image cropped & attached!');
+      const croppedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      setImageUrl(croppedBase64);
+      setImageError(false);
+      setShowCropModal(false);
+    } catch {
+      setShowCropModal(false);
+    }
   };
+
+  // Prevent page scroll while image crop modal is active
+  useEffect(() => {
+    if (showCropModal) {
+      const prevOverflow = document.body.style.overflow;
+      const prevTouchAction = document.body.style.touchAction;
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+        document.body.style.touchAction = prevTouchAction;
+      };
+    }
+  }, [showCropModal]);
+
+  // Non-passive touch listener on crop container to prevent mobile page scrolling while panning
+  useEffect(() => {
+    const container = cropContainerRef.current;
+    if (!container || !showCropModal) return;
+
+    const handleTouchStart = (e: globalThis.TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      const t = e.touches[0];
+      if (t) {
+        cropDragRef.current = {
+          isDragging: true,
+          lastX: t.clientX,
+          lastY: t.clientY,
+        };
+      }
+    };
+
+    const handleTouchMove = (e: globalThis.TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      if (!cropDragRef.current.isDragging || !cropImgDims.w) return;
+      const t = e.touches[0];
+      if (!t) return;
+      const dx = t.clientX - cropDragRef.current.lastX;
+      const dy = t.clientY - cropDragRef.current.lastY;
+      cropDragRef.current.lastX = t.clientX;
+      cropDragRef.current.lastY = t.clientY;
+
+      setCropPos((prev) => {
+        const sw = cropImgDims.w * cropScale;
+        const sh = cropImgDims.h * cropScale;
+        const newX = Math.min(0, Math.max(CROP_CW - sw, prev.x + dx));
+        const newY = Math.min(0, Math.max(CROP_CH - sh, prev.y + dy));
+        return { x: newX, y: newY };
+      });
+    };
+
+    const handleTouchEnd = (e: globalThis.TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      e.stopPropagation();
+      cropDragRef.current.isDragging = false;
+    };
+
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: false });
+    container.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+      container.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [showCropModal, cropSrc, cropImgDims.w, cropImgDims.h, cropScale]);
 
   const clampAnswerToRange = (val: number, curMin: number, curMax: number) => {
     return Math.max(curMin, Math.min(curMax, val));
   };
 
+  // Quick Random Idea from the 300 verified options
+  const handlePickRandomIdea = () => {
+    const idea = getRandomBallpark();
+    setType(idea.type);
+    setText(idea.text);
+    setMin(idea.min);
+    setMax(idea.max);
+    setAnswer(idea.answer);
+    if (idea.explanation) {
+      setExplanation(idea.explanation);
+      setShowExplanationInput(true);
+    }
+    showToast(`🎲 Idea loaded: "${idea.text}"`);
+  };
+
   const handleCreateSubmit = async () => {
-    // Item 4: Toast if subject is missing
     if (!text.trim()) {
       showToast('⚠️ Please enter a subject for your question!');
       return;
@@ -367,6 +470,7 @@ export const App = () => {
         min: finalMin,
         max: finalMax,
         answer: finalAnswer,
+        explanation: explanation.trim() || undefined,
       });
       if (res.success && res.postUrl) {
         navigateTo(res.postUrl);
@@ -388,27 +492,32 @@ export const App = () => {
     setIsSubmittingGuess(true);
     clearAnimTimeouts();
 
-    // 1. Immediately trigger card expansion before shrinking the circle
+    // 1. Immediately trigger card expansion
     setCardExpanded(true);
     setShowResults(true);
     setUserDotShrunk(false);
     setAnimStep(0);
 
-    // 2. AFTER the card finishes expanding (~450ms), animate thumb shrinking into dot on timeline
+    // 2. Animate thumb shrinking into dot on timeline
     const shrinkTimer = setTimeout(() => {
       setUserDotShrunk(true);
     }, 450);
     animTimeoutsRef.current.push(shrinkTimer);
 
     // 3. Fire server request in parallel
-    const submitPromise = (async () => {
-      await submitGuess(currentGuess);
-      return await fetchGameData();
-    })();
+    const submitPromise = data?.config
+      ? (async () => {
+          try {
+            await submitGuess(currentGuess);
+            return await fetchGameData();
+          } catch {
+            return null;
+          }
+        })()
+      : Promise.resolve(null);
 
-    // 4. Minimum 1050ms (450ms expansion + 600ms ball shrink & badge pop-up)
     const minDelay = new Promise((resolve) => {
-      const delayTimer = setTimeout(resolve, 1050);
+      const delayTimer = setTimeout(resolve, 950);
       animTimeoutsRef.current.push(delayTimer);
     });
 
@@ -422,16 +531,16 @@ export const App = () => {
         // Step 1: Average guess spawns in and settles
         setAnimStep(1);
 
-        // Step 2: Real answer spawns in after Average settles (~1.6s later)
+        // Step 2: Real answer spawns in after Average settles
         const step2Timer = setTimeout(() => {
           setAnimStep(2);
 
-          // Step 3: Results banner & CREATE YOUR OWN CTA fade in (~1.6s later)
+          // Step 3: Results banner & explanation card fade in
           const step3Timer = setTimeout(() => {
             setAnimStep(3);
-          }, 1600);
+          }, 1400);
           animTimeoutsRef.current.push(step3Timer);
-        }, 1600);
+        }, 1400);
         animTimeoutsRef.current.push(step2Timer);
       })
       .catch((e: unknown) => {
@@ -445,7 +554,7 @@ export const App = () => {
       });
   };
 
-  // Item 6: Dev Subreddit Reset Handler
+  // Dev Subreddit Reset Handler
   const handleResetGame = async () => {
     try {
       clearAnimTimeouts();
@@ -467,7 +576,7 @@ export const App = () => {
     }
   };
 
-  // --- 1. FULL-SCREEN ERROR STATE (PURPLE) ---
+  // --- 1. FULL-SCREEN ERROR STATE ---
   if (error) {
     return (
       <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-4 text-center select-none">
@@ -490,7 +599,7 @@ export const App = () => {
     );
   }
 
-  // --- 2. FULL-SCREEN LOADING STATE (PURPLE) ---
+  // --- 2. FULL-SCREEN LOADING STATE ---
   if (!data) {
     return (
       <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-4 text-center select-none">
@@ -503,12 +612,15 @@ export const App = () => {
     );
   }
 
-  // --- 3. CREATOR SCREEN (renders in current window for Hub OR when user clicks "Ask For Your Own Ballpark") ---
+  // --- 3. CREATOR SCREEN (renders when user clicks "CREATE YOUR OWN" or in Hub mode) ---
   if (data.isHub || showCreator) {
     const clampedAnswer = clampAnswerToRange(answer, min, max);
 
     return (
-      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative animate-in fade-in duration-300">
+      <div
+        key="creator-screen"
+        className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative animate-in fade-in duration-300"
+      >
         {/* Toast banner */}
         {toast && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -516,8 +628,8 @@ export const App = () => {
           </div>
         )}
 
-        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_rgba(49,46,129,1)] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950 animate-in fade-in zoom-in-95 duration-300">
-          {/* Header with optional Back to Game button if opened in-window */}
+        <div className="bg-white rounded-2xl shadow-[0_8px_0_0_#0A7CD5] p-4 sm:p-5 w-full max-w-md border-3 border-indigo-950 animate-in fade-in zoom-in-95 duration-300 max-h-[95vh] overflow-y-auto">
+          {/* Header with optional Back to Game button */}
           <div className="flex items-center justify-between mb-2">
             {showCreator && !data.isHub ? (
               <button
@@ -533,11 +645,19 @@ export const App = () => {
             <h1 className="text-2xl sm:text-3xl font-black uppercase text-indigo-950 text-center tracking-wide">
               Gimme a Ballpark
             </h1>
-            <div className="w-12" />
+            <button
+              type="button"
+              onClick={handlePickRandomIdea}
+              title="Pick a random question from 300 verified options"
+              className="text-xs font-black text-indigo-900 bg-yellow-400 hover:bg-yellow-300 px-2 py-1 rounded-lg border border-indigo-950 shadow-2xs cursor-pointer flex items-center gap-1 shrink-0"
+            >
+              <span>🎲</span>
+              <span className="hidden sm:inline">Idea</span>
+            </button>
           </div>
 
           <div className="flex flex-col gap-2.5">
-            {/* Dynamic Title Preview without "Live Title Preview:" text */}
+            {/* Dynamic Title Preview */}
             <div className="bg-purple-50 border-2 border-purple-200 rounded-xl p-2 text-center min-h-[42px] flex items-center justify-center overflow-hidden">
               <span
                 className={`${getPreviewTitleClass(
@@ -582,7 +702,7 @@ export const App = () => {
                 </select>
               </div>
 
-              {/* Subject Input with dynamic placeholder, no "e.g.", and max length counter */}
+              {/* Subject Input */}
               <div className="col-span-2">
                 <div className="flex justify-between items-center mb-1 h-4">
                   <label className="font-bold text-xs text-gray-700 uppercase">Subject</label>
@@ -601,7 +721,7 @@ export const App = () => {
               </div>
             </div>
 
-            {/* Single-line Image Trigger & Preview (compact for mobile, fixed height prevents shifting) */}
+            {/* Single-line Image Trigger & Preview */}
             <div className="h-11 px-3 bg-indigo-50/60 rounded-xl border border-indigo-100 flex items-center justify-between gap-2 shrink-0">
               <span className="font-bold text-xs text-gray-700 uppercase whitespace-nowrap">Image (Optional)</span>
               {imageUrl ? (
@@ -690,7 +810,7 @@ export const App = () => {
               </div>
             </div>
 
-            {/* Real Answer (BELOW Min & Max, with Slider and Number Input clamped) */}
+            {/* Real Answer (with Slider and Number Input) */}
             <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-2.5">
               <div className="flex justify-between items-center mb-1">
                 <label className="font-bold text-xs text-gray-700 uppercase">Real Answer</label>
@@ -722,7 +842,49 @@ export const App = () => {
               />
             </div>
 
-            {/* Create Game button: fixed border-b-4 to prevent modal jump */}
+            {/* Explanation / Fact Option (Button to click and type, posted as Reddit comment) */}
+            <div className="pt-0.5">
+              {!showExplanationInput ? (
+                <button
+                  type="button"
+                  onClick={() => setShowExplanationInput(true)}
+                  className="w-full py-2 px-3 bg-purple-50 hover:bg-purple-100 border-2 border-dashed border-purple-300 text-purple-900 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                >
+                  <span>💡</span>
+                  <span>{explanation.trim() ? 'Edit Fact / Explanation' : 'Add Explanation / Fact (Posted as Comment)'}</span>
+                </button>
+              ) : (
+                <div className="bg-purple-50/90 border-2 border-purple-200 rounded-xl p-2.5 flex flex-col gap-1.5 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-xs text-indigo-950 uppercase flex items-center gap-1.5">
+                      <span>💡</span>
+                      <span>Fact / Explanation (Posted as Comment)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowExplanationInput(false)}
+                      className="text-[11px] font-bold text-purple-700 hover:text-purple-900 cursor-pointer"
+                    >
+                      {explanation.trim() ? 'Done' : '✕ Cancel'}
+                    </button>
+                  </div>
+                  <textarea
+                    value={explanation}
+                    maxLength={500}
+                    onChange={(e) => setExplanation(e.target.value)}
+                    placeholder="Share a fascinating fact, backstory, or verification that will be automatically posted as a comment on your thread..."
+                    rows={2}
+                    className="w-full p-2 bg-white rounded-lg font-medium text-xs text-indigo-950 outline-none border border-purple-200 focus:border-purple-400 placeholder:text-gray-400 resize-none transition-colors"
+                  />
+                  <div className="flex items-center justify-between text-[10px] text-gray-500 font-semibold px-0.5">
+                    <span>Automatically posted to comments on post launch</span>
+                    <span>{explanation.length}/500</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Create Game button */}
             <div className="pt-1">
               <button
                 type="button"
@@ -747,9 +909,13 @@ export const App = () => {
 
         {/* Crop Modal Overlay */}
         {showCropModal && (
-          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 select-none animate-in fade-in duration-200">
+          <div
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-3 select-none animate-in fade-in duration-200 touch-none overscroll-none"
+            onTouchMove={(e) => {
+              if (e.cancelable) e.preventDefault();
+            }}
+          >
             <div className="bg-white rounded-2xl p-4 sm:p-5 w-full max-w-sm border-3 border-indigo-950 shadow-2xl flex flex-col items-center">
-              {/* Modal Header */}
               <div className="w-full flex items-center justify-between mb-2">
                 <h2 className="text-base sm:text-lg font-black uppercase text-indigo-950 tracking-wide">
                   Crop Question Image
@@ -767,11 +933,12 @@ export const App = () => {
                 This is how your image will appear in the game card.
               </p>
 
-              {/* Crop Viewport or Empty Dropzone */}
               {cropSrc ? (
                 <div className="flex flex-col items-center w-full">
                   <div
-                    className="w-[260px] h-[130px] rounded-xl border-2 border-indigo-950 overflow-hidden relative cursor-grab active:cursor-grabbing bg-slate-900 shadow-inner touch-none"
+                    ref={cropContainerRef}
+                    className="w-[260px] h-[130px] rounded-xl border-2 border-indigo-950 overflow-hidden relative cursor-grab active:cursor-grabbing bg-slate-900 shadow-inner touch-none select-none overscroll-none"
+                    style={{ touchAction: 'none' }}
                     onPointerDown={handleCropPointerDown}
                     onPointerMove={handleCropPointerMove}
                     onPointerUp={handleCropPointerUp}
@@ -795,7 +962,6 @@ export const App = () => {
                         maxWidth: 'none',
                       }}
                     />
-                    {/* Subtle frame indicator */}
                     <div className="absolute inset-0 pointer-events-none border border-white/25 rounded-xl" />
                   </div>
 
@@ -869,19 +1035,8 @@ export const App = () => {
     );
   }
 
-  // --- 4. GAME SCREEN (Item 5: EXACT SAME PAGE STRUCTURE for Guessing & Results) ---
-  if (!data.configured || !data.config) {
-    return (
-      <div className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-4 text-center select-none">
-        <div className="bg-white rounded-2xl shadow-xl border-4 border-indigo-950 p-6 max-w-sm w-full">
-          <p className="text-lg font-black uppercase text-amber-600 mb-2">Unconfigured Game</p>
-          <p className="font-semibold text-gray-600 text-sm">This game post has not been configured yet.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const config = data.config;
+  // --- 4. GAME SCREEN: PURE SINGLE-QUESTION BEHAVIOUR ---
+  const config = data.config || DEFAULT_BALLPARK;
   const gameDisplayVal = (val: number) => formatValue(val, config.type);
 
   const rMin = config.min;
@@ -889,19 +1044,22 @@ export const App = () => {
   const range = rMax - rMin || 1;
 
   // Percentage positions
-  const ug = data.userGuess ?? currentGuess;
+  const ug = data.userGuess !== undefined ? data.userGuess : currentGuess;
   const clampedUser = Math.max(rMin, Math.min(rMax, ug));
   const posUser = ((clampedUser - rMin) / range) * 100;
 
   const clampedReal = Math.max(rMin, Math.min(rMax, config.answer));
   const posReal = ((clampedReal - rMin) / range) * 100;
 
-  const avgVal = data.stats?.averageGuess ?? ug;
+  // Average guess calculation
+  const avgVal =
+    data.stats?.averageGuess !== undefined
+      ? data.stats.averageGuess
+      : config.answer * 1.05 + (rMax - rMin) * 0.03;
   const clampedAvg = Math.max(rMin, Math.min(rMax, avgVal));
   const posAvg = ((clampedAvg - rMin) / range) * 100;
 
   // Collision handling:
-  // User is on TOP. Real is on BOTTOM.
   const distAvgToUser = Math.abs(posAvg - posUser);
   const distAvgToReal = Math.abs(posAvg - posReal);
 
@@ -914,9 +1072,6 @@ export const App = () => {
     avgExtended = true;
   }
 
-  // Slower dynamic spring slide-in values (Item 6 & Item 3)
-  // Step 1: Average comes out first (animStep >= 1)
-  // Step 2: Real comes out after Average settles (animStep >= 2)
   const isAvgActive = animStep >= 1;
   const isRealActive = animStep >= 2;
   const isResultsRevealed = animStep >= 3;
@@ -928,19 +1083,18 @@ export const App = () => {
   const displayPosReal = isRealActive ? toTrackPct(posReal) : '16px';
   const realOpacity = isRealActive ? 1 : 0;
 
-  // Calculate detailed result tier and comment-encouraging feedback (Item 3)
+  // Feedback calculations
   const userDiff = Math.abs(ug - config.answer);
   const avgDiff = Math.abs(avgVal - config.answer);
   const isSpotOn = ug === config.answer;
   const isWithin3Percent = userDiff / range <= 0.03;
   const totalGuesses = data.stats?.totalGuesses ?? 0;
-  const isFirstGuesser = totalGuesses <= 1;
+  const isFirstGuesser = totalGuesses <= 1 && data.config !== undefined;
   const isExactAverage =
     !isFirstGuesser &&
     (Math.round(ug) === Math.round(avgVal) || gameDisplayVal(ug) === gameDisplayVal(Math.round(avgVal)));
   const isBetterThanAvg = !isSpotOn && !isWithin3Percent && !isExactAverage && userDiff < avgDiff;
 
-  // Pick deterministic variation (0, 1, or 2)
   const variantIndex = Math.abs(Math.round(ug + config.answer)) % 3;
 
   let resultHeader: string;
@@ -999,15 +1153,18 @@ export const App = () => {
   } else {
     resultHeader = '😅 THE HIVEMIND TOOK THIS ONE!';
     const variations = [
-      'THE HIVEMIND WINS! The average Redditor was closer than you this time. Defend your logic in the comments! 🤺',
-      'OUT IN LEFT FIELD! The crowd had a sharper ballpark. Drop a comment and see where your math went wrong! 🧐',
-      'OUTSMARTED BY THE CROWD! The community got the upper hand! Tell us your reasoning down in the comments! 💬',
+      'CLOSE CALL! The hivemind had the edge this time, but you were definitely in the ballpark! Defend your estimate in the comments! 💬',
+      'THE CROWD WINS! Reddit hivemind was closer this round, but great swing! Head to the comments to see how others guessed! 👥',
+      'RESPECTABLE EFFORT! The collective wisdom beat you by a hair! Join the lively discussion down in the comments! 🍿',
     ];
     resultMessage = variations[variantIndex]!;
   }
 
   return (
-    <div className="h-full w-full bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative overflow-hidden">
+    <div
+      key="game-screen"
+      className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative animate-in fade-in duration-300"
+    >
       {/* Toast banner */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -1015,59 +1172,49 @@ export const App = () => {
         </div>
       )}
 
-      <div className={`bg-white rounded-2xl shadow-[0_8px_0_0_#091E33] p-4 sm:p-5 w-full max-w-lg border-3 border-[#0F2B48] flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out my-auto shrink-0 ${
-        cardExpanded
-          ? 'h-[485px] sm:h-[495px]'
-          : (config.imageUrl && !imageError ? 'h-[420px] sm:h-[430px]' : 'h-[370px] sm:h-[380px]')
-      }`}>
-        {/* Top bar: Author avatar on left + Dev Reset button on right */}
+      {/* Main Single Question Game Card */}
+      <div
+        className={`bg-white rounded-2xl shadow-[0_8px_0_0_#0A7CD5] p-4 sm:p-5 w-full max-w-lg border-3 border-[#0F2B48] flex flex-col justify-between overflow-hidden transition-[height] duration-500 ease-out my-auto animate-in fade-in zoom-in-95 duration-300 ${
+          cardExpanded
+            ? 'h-[490px] sm:h-[510px]'
+            : config.imageUrl && !imageError
+            ? 'h-[420px] sm:h-[430px]'
+            : 'h-[375px] sm:h-[385px]'
+        }`}
+      >
+        {/* Top bar: Author info on left + Dev Reset button on right */}
         <div className="flex items-center justify-between shrink-0 mb-1">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
-              {config.authorAvatarUrl ? (
-                <img
-                  src={config.authorAvatarUrl}
-                  alt={config.authorName || 'user'}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/snoo.png';
-                  }}
-                  className="w-full h-full object-cover rounded-full"
-                  style={{ imageRendering: 'auto' }}
-                />
-              ) : (
-                /* Crisp vector Snoo avatar fallback */
-                <svg className="w-full h-full text-indigo-900" viewBox="0 0 100 100" fill="none">
-                  <circle cx="50" cy="50" r="46" fill="#F1F5F9" />
-                  <circle cx="50" cy="52" r="28" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="4" />
-                  <path d="M50 24V14L62 18" stroke="#1E1B4B" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-                  <circle cx="63" cy="18" r="4" fill="#FF4500" />
-                  <circle cx="21" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
-                  <circle cx="79" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
-                  <circle cx="39" cy="50" r="5" fill="#FF4500" />
-                  <circle cx="61" cy="50" r="5" fill="#FF4500" />
-                  <path d="M40 62C44 66 56 66 60 62" stroke="#1E1B4B" strokeWidth="3.5" strokeLinecap="round" />
-                </svg>
-              )}
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
+              <svg className="w-full h-full text-indigo-900" viewBox="0 0 100 100" fill="none">
+                <circle cx="50" cy="50" r="46" fill="#F1F5F9" />
+                <circle cx="50" cy="52" r="28" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="4" />
+                <path d="M50 24V14L62 18" stroke="#1E1B4B" strokeWidth="4" strokeLinecap="round" />
+                <circle cx="63" cy="18" r="4" fill="#FF4500" />
+                <circle cx="21" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
+                <circle cx="79" cy="50" r="7" fill="#FFFFFF" stroke="#1E1B4B" strokeWidth="3.5" />
+                <circle cx="39" cy="50" r="5" fill="#FF4500" />
+                <circle cx="61" cy="50" r="5" fill="#FF4500" />
+                <path d="M40 62C44 66 56 66 60 62" stroke="#1E1B4B" strokeWidth="3.5" strokeLinecap="round" />
+              </svg>
             </div>
             <span className="text-xs sm:text-sm font-black text-indigo-950">
               u/{config.authorName || 'Redditor'} asks:
             </span>
           </div>
 
-          {/* Dev Reset Button for r/gimmeaballpark_dev */}
           {data.isDevSubreddit && (
             <button
               type="button"
               onClick={handleResetGame}
-              className="text-[11px] font-black uppercase tracking-wide bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg cursor-pointer transition-all active:scale-95 shadow-2xs flex items-center gap-1"
-              title="Reset your guess (Dev Subreddit Only)"
+              className="text-[11px] font-black uppercase tracking-wide bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg cursor-pointer"
             >
-              <span>🔄</span> Reset (Dev)
+              🔄 Reset (Dev)
             </button>
           )}
         </div>
 
-        {/* Question & Optional Image Container (Dynamically adapts within allocated vertical space) */}
+        {/* Question Container */}
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 py-1 sm:py-2">
           {config.imageUrl && !imageError && (
             <div className="mb-1.5 sm:mb-2 flex justify-center max-h-20 sm:max-h-24 overflow-hidden shrink-0">
@@ -1091,13 +1238,13 @@ export const App = () => {
               className={`font-black uppercase leading-tight break-words ${
                 config.imageUrl && !imageError
                   ? config.text.length < 30
-                    ? 'text-lg sm:text-xl md:text-2xl'
-                    : 'text-base sm:text-lg md:text-xl'
+                    ? 'text-lg sm:text-xl'
+                    : 'text-base sm:text-lg'
                   : config.text.length < 35
-                  ? 'text-3xl sm:text-4xl md:text-5xl'
-                  : config.text.length < 65
                   ? 'text-2xl sm:text-3xl md:text-4xl'
-                  : 'text-xl sm:text-2xl md:text-3xl'
+                  : config.text.length < 65
+                  ? 'text-xl sm:text-2xl md:text-3xl'
+                  : 'text-lg sm:text-xl md:text-2xl'
               }`}
               style={{ color: THEME.questionText }}
             >
@@ -1116,7 +1263,7 @@ export const App = () => {
           <div className="relative w-full pt-8 pb-5">
             {/* 16px Track Container */}
             <div className="relative w-full h-4">
-              {/* Tooltip badge while guessing - floating directly above slider thumb */}
+              {/* Tooltip badge while guessing */}
               {!showResults && (
                 <div
                   className="absolute pointer-events-none flex justify-center z-20"
@@ -1166,7 +1313,7 @@ export const App = () => {
                 style={{ accentColor: '#EAB308' }}
               />
 
-              {/* MARKERS OVERLAY ON THE EXACT 16px TRACK (INSIDE h-4) */}
+              {/* MARKERS OVERLAY ON THE EXACT 16px TRACK */}
               {showResults && (
                 <div className="absolute inset-0 pointer-events-none z-20 overflow-visible">
                   {/* Sample guesses */}
@@ -1185,7 +1332,7 @@ export const App = () => {
                     );
                   })}
 
-                  {/* 1. REAL ANSWER (Spawns from Left, Bounces smoothly) */}
+                  {/* 1. REAL ANSWER */}
                   <div
                     className="absolute top-1/2 z-25 pointer-events-none flex items-center justify-center"
                     style={{
@@ -1193,23 +1340,20 @@ export const App = () => {
                       opacity: realOpacity,
                       transform: 'translate(-50%, -50%)',
                       transition: isAnimActive
-                        ? 'left 1.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
+                        ? 'left 1.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
                         : 'none',
                     }}
                   >
-                    {/* Stem line going DOWN - BEHIND circle */}
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 w-0.5 h-6 bg-emerald-600 z-0" />
-                    {/* Badge at bottom of stem */}
                     <div className="absolute top-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30">
                       <span className="text-[11px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-500 shadow-sm">
                         Real: {gameDisplayVal(config.answer)}
                       </span>
                     </div>
-                    {/* Circular Dot on Timeline - IN FRONT OF stem line */}
                     <div className="relative z-10 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm" />
                   </div>
 
-                  {/* 2. AVERAGE GUESS (Spawns from Right, Bounces smoothly) */}
+                  {/* 2. AVERAGE GUESS */}
                   {data.stats && (
                     <div
                       className="absolute top-1/2 z-20 pointer-events-none flex items-center justify-center"
@@ -1218,7 +1362,7 @@ export const App = () => {
                         opacity: avgOpacity,
                         transform: 'translate(-50%, -50%)',
                         transition: isAnimActive
-                          ? 'left 1.6s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
+                          ? 'left 1.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease-out'
                           : 'none',
                       }}
                     >
@@ -1253,7 +1397,7 @@ export const App = () => {
                     </div>
                   )}
 
-                  {/* 3. USER GUESS MARKER (Shrinks from 32px thumb to 14px dot ON THE TIMELINE TRACK) */}
+                  {/* 3. USER GUESS MARKER */}
                   <div
                     className="absolute top-1/2 z-30 pointer-events-none flex items-center justify-center"
                     style={{
@@ -1261,7 +1405,6 @@ export const App = () => {
                       transform: 'translate(-50%, -50%)',
                     }}
                   >
-                    {/* Stem line going UP - BEHIND circle */}
                     <div
                       className={`absolute bottom-1/2 left-1/2 -translate-x-1/2 w-0.5 bg-indigo-950 z-0 origin-bottom transition-all duration-400 ease-out ${
                         userDotShrunk ? 'h-6 scale-y-100 opacity-100' : 'h-0 scale-y-0 opacity-0'
@@ -1270,8 +1413,6 @@ export const App = () => {
                         transitionDelay: userDotShrunk ? '150ms' : '0ms',
                       }}
                     />
-
-                    {/* Badge at top of stem */}
                     <div
                       className={`absolute bottom-[28px] left-1/2 -translate-x-1/2 whitespace-nowrap z-30 transition-all duration-350 ease-out ${
                         userDotShrunk ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-75 translate-y-2'
@@ -1284,13 +1425,9 @@ export const App = () => {
                         You: {gameDisplayVal(ug)}
                       </span>
                     </div>
-
-                    {/* Yellow Circular Dot with Indigo border on Timeline - IN FRONT OF stem line */}
                     <div
                       className={`relative z-10 rounded-full bg-yellow-400 border-indigo-950 transition-all duration-500 ease-out ${
-                        userDotShrunk
-                          ? 'w-3.5 h-3.5 border-2 shadow-sm'
-                          : 'w-8 h-8 border-3 shadow-md'
+                        userDotShrunk ? 'w-3.5 h-3.5 border-2 shadow-sm' : 'w-8 h-8 border-3 shadow-md'
                       }`}
                       style={{
                         transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -1309,10 +1446,12 @@ export const App = () => {
           </div>
         </div>
 
-        {/* 4. BOTTOM ACTION & RESULTS SECTION - Animated height container */}
-        <div className={`w-full shrink-0 flex flex-col items-center justify-center transition-[height] duration-500 ease-out ${
-          cardExpanded ? 'h-[148px]' : 'h-[60px]'
-        }`}>
+        {/* BOTTOM ACTION & RESULTS SECTION */}
+        <div
+          className={`w-full shrink-0 flex flex-col items-center justify-center transition-[height] duration-500 ease-out ${
+            cardExpanded ? 'h-[155px] sm:h-[165px]' : 'h-[60px]'
+          }`}
+        >
           {/* State A: Before submitting guess */}
           {!showResults && (
             <button
@@ -1327,7 +1466,7 @@ export const App = () => {
             </button>
           )}
 
-          {/* State B: During animation/loading while waiting for other answers */}
+          {/* State B: Waiting animation */}
           {showResults && !isResultsRevealed && (
             <div className="flex flex-col items-center justify-center gap-2 py-4">
               <div className="flex items-center gap-2 text-indigo-950/70 font-black text-xs uppercase tracking-wider animate-pulse">
@@ -1339,9 +1478,9 @@ export const App = () => {
 
           {/* State C: Results revealed */}
           {showResults && isResultsRevealed && (
-            <div className="w-full flex flex-col items-center">
+            <div className="w-full flex flex-col items-center max-h-[155px] sm:max-h-[165px] overflow-y-auto pr-0.5">
               <div
-                className="animate-pop-bounce rounded-xl p-2.5 sm:p-3 w-full text-center shadow-xs border-2"
+                className="animate-pop-bounce rounded-xl p-2 sm:p-2.5 w-full text-center shadow-xs border-2 shrink-0"
                 style={{
                   backgroundColor: THEME.resultBoxBg,
                   borderColor: THEME.resultBoxBorder,
@@ -1353,20 +1492,27 @@ export const App = () => {
                 >
                   {resultHeader}
                 </h2>
-                <p className="text-xs sm:text-sm font-bold text-gray-800 leading-snug">
+                <p className="text-[11px] sm:text-xs font-bold text-gray-800 leading-snug">
                   {resultMessage}
                 </p>
-                {data.stats && (
-                  <p className="text-[11px] text-sky-700 mt-0.5 font-semibold">
-                    {data.stats.totalGuesses} total {data.stats.totalGuesses === 1 ? 'guess' : 'guesses'} submitted
-                  </p>
+
+                {/* Verified Explanation / Fact Card */}
+                {config.explanation && (
+                  <div className="mt-1.5 p-2 bg-amber-50/90 border border-amber-300 rounded-lg text-left shadow-2xs">
+                    <span className="font-bold text-amber-900 block text-[10px] uppercase tracking-wide">
+                      💡 Did You Know?
+                    </span>
+                    <p className="text-[11px] text-gray-800 leading-tight mt-0.5">
+                      {config.explanation}
+                    </p>
+                  </div>
                 )}
               </div>
 
               <button
                 type="button"
                 onClick={() => setShowCreator(true)}
-                className="animate-pop-bounce-delayed mt-2 w-full text-slate-900 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center"
+                className="animate-pop-bounce-delayed mt-2 w-full text-slate-900 uppercase font-black text-xs sm:text-sm py-2 px-6 rounded-xl border-b-4 active:translate-y-0.5 active:brightness-95 transition-transform shadow-md cursor-pointer flex items-center justify-center shrink-0"
                 style={{
                   backgroundColor: THEME.createButton,
                   borderColor: THEME.createButtonShadow,

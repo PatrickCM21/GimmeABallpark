@@ -10,7 +10,7 @@ export const THEME = {
 
   /** Primary card border & solid retro shadow */
   cardBorder: '#0F2B48',
-  cardShadow: '#091E33',
+  cardShadow: '#0A7CD5',
 
   /** Question preamble text ("GIMME A BALLPARK FOR THE") */
   preamble: '#0284C7',

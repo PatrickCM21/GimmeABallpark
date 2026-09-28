@@ -183,6 +183,18 @@ api.post('/create-game', async (c) => {
       redis.set(`post:${newIdWithPrefix}:config`, JSON.stringify(fullConfig)),
     ]);
 
+    // If author provided an explanation/fact, post it as a comment on the thread
+    if (fullConfig.explanation && fullConfig.explanation.trim()) {
+      try {
+        await reddit.submitComment({
+          id: newPost.id as `t3_${string}`,
+          text: `💡 **Ballpark Fact / Explanation:**\n\n${fullConfig.explanation.trim()}`,
+        });
+      } catch (commentErr) {
+        console.warn("Could not post explanation comment:", commentErr);
+      }
+    }
+
     const targetUrl = newPost.url || (newPost.permalink ? `https://reddit.com${newPost.permalink}` : `https://reddit.com/r/${subredditName}/comments/${newCleanId}`);
 
     return c.json<CreateGameResponse>({
