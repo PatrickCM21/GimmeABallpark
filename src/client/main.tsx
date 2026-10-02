@@ -67,6 +67,7 @@ const postComment = async (text: string) => {
 import { GameButton } from './components/GameButton';
 import { CropModal } from './components/CropModal';
 import { FactModal } from './components/FactModal';
+import { CreatorWarningModal } from './components/CreatorWarningModal';
 import { CommentModal } from './components/CommentModal';
 import { ErrorState } from './components/ErrorState';
 import { LoadingState } from './components/LoadingState';
@@ -97,6 +98,7 @@ export const App = () => {
   const [answer, setAnswer] = useState(50);
   const [explanation, setExplanation] = useState('');
   const [showFactModal, setShowFactModal] = useState(false);
+  const [showCreatorWarning, setShowCreatorWarning] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
   // Image Crop Modal state
@@ -355,7 +357,7 @@ export const App = () => {
   // Prevent page scroll while image crop modal is active
   // Prevent page scroll while image crop modal, fact modal, or comment modal is active
   useEffect(() => {
-    if (showCropModal || showFactModal || showCommentModal) {
+    if (showCropModal || showFactModal || showCommentModal || showCreatorWarning) {
       const prevOverflow = document.body.style.overflow;
       const prevTouchAction = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
@@ -365,7 +367,7 @@ export const App = () => {
         document.body.style.touchAction = prevTouchAction;
       };
     }
-  }, [showCropModal, showFactModal, showCommentModal]);
+  }, [showCropModal, showFactModal, showCommentModal, showCreatorWarning]);
 
   // Non-passive touch listener on crop container to prevent mobile page scrolling while panning
   useEffect(() => {
@@ -456,7 +458,7 @@ export const App = () => {
     setExplanation('');
   };
 
-  const handleCreateSubmit = async () => {
+  const executeCreateSubmit = async () => {
     if (!text.trim()) {
       showToast('⚠️ Please enter a subject for your question!');
       return;
@@ -494,6 +496,27 @@ export const App = () => {
       setError(e instanceof Error ? e.message : 'Unknown error');
       setIsCreating(false);
     }
+  };
+
+  const handleCreateSubmit = async () => {
+    if (!text.trim()) {
+      showToast('?? Please enter a subject for your question!');
+      return;
+    }
+    const finalMin = type === 'percentage' ? 0 : min;
+    const finalMax = type === 'percentage' ? 100 : max;
+    if (finalMin >= finalMax) {
+      showToast('?? Min guess must be less than max guess!');
+      return;
+    }
+
+    const hasSeenWarning = localStorage.getItem('hasSeenCreatorWarning');
+    if (!hasSeenWarning) {
+      setShowCreatorWarning(true);
+      return;
+    }
+
+    executeCreateSubmit();
   };
 
   const handleGuessSubmit = () => {
@@ -738,6 +761,39 @@ export const App = () => {
     resultStatement = variations[variantIndex % variations.length]!;
   }
 
+  let userScoreText = "";
+  if (data.userGuess !== undefined && config) {
+    const gameDisplayVal = (val: number) => formatValue(val, config.type);
+    const ug = data.userGuess;
+    const ans = config.answer;
+    const diff = Math.abs(ug - ans);
+    
+    let resultStr = "";
+    if (ans === 0) {
+      if (diff === 0) {
+        resultStr = "basically spot on";
+      } else {
+        resultStr = `Off by ${gameDisplayVal(diff)}`;
+      }
+    } else {
+      const pctOff = (diff / Math.abs(ans)) * 100;
+      if (pctOff <= 5) {
+        resultStr = "basically spot on";
+      } else {
+        if (ug > ans) {
+          const mult = (ug / ans).toFixed(1).replace(/\.0$/, "");
+          resultStr = `${mult}x more than the answer`;
+        } else if (ug !== 0) {
+          const mult = (ans / ug).toFixed(1).replace(/\.0$/, "");
+          resultStr = `${mult}x smaller than the answer`;
+        } else {
+          resultStr = `Off by ${gameDisplayVal(diff)}`;
+        }
+      }
+    }
+    userScoreText = `^(Guessed: ${gameDisplayVal(ug)} - ${resultStr})`;
+  }
+
   return (
     <div
       className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative"
@@ -863,6 +919,15 @@ export const App = () => {
   />
 
   {/* Read More + Comment Modal */}
+  <CreatorWarningModal
+    showCreatorWarning={showCreatorWarning}
+    setShowCreatorWarning={setShowCreatorWarning}
+    onProceed={() => {
+      localStorage.setItem('hasSeenCreatorWarning', 'true');
+      executeCreateSubmit();
+    }}
+  />
+
   <CommentModal
     showCommentModal={showCommentModal}
     setShowCommentModal={setShowCommentModal}
@@ -873,6 +938,7 @@ export const App = () => {
     setIsPostingComment={setIsPostingComment}
     postComment={postComment}
     showToast={showToast}
+    userScoreText={userScoreText}
   />
 </div>
 );
@@ -883,3 +949,13 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>
 );
+
+
+
+
+
+
+
+
+
+

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { context, redis, reddit } from '@devvit/web/server';
+import { context, redis, reddit, media } from '@devvit/web/server';
 import type {
   GameDataResponse,
   CreateGameRequest,
@@ -168,12 +168,29 @@ api.post('/create-game', async (c) => {
     // The complete config (including imageUrl) is stored in Redis.
     const { imageUrl: _strippedImage, ...lightConfig } = fullConfig;
 
+    let uploadedMediaUrl: string | undefined;
+    if (fullConfig.imageUrl) {
+      try {
+        const mediaAsset = await media.upload({
+          url: fullConfig.imageUrl,
+          type: 'image',
+        });
+        uploadedMediaUrl = mediaAsset.mediaUrl;
+      } catch (e) {
+        console.warn("Could not upload media to Devvit, using raw data URI", e);
+        uploadedMediaUrl = fullConfig.imageUrl;
+      }
+    }
+
     const newPost = await reddit.submitCustomPost({
       title: formattedTitle,
       subredditName: subredditName!,
       postData: lightConfig,
       runAs: 'USER' as const,
-      userGeneratedContent: { text: formattedTitle },
+      userGeneratedContent: {
+        text: `${formattedTitle}${fullConfig.explanation ? `\n\nExplanation: ${fullConfig.explanation}` : ''}`,
+        ...(uploadedMediaUrl ? { imageUrls: [uploadedMediaUrl] } : {}),
+      },
     });
 
     const newCleanId = newPost.id.replace('t3_', '');

@@ -10,6 +10,7 @@ export const CommentModal = ({
   setIsPostingComment,
   postComment,
   showToast,
+  userScoreText,
 }: {
   showCommentModal: boolean;
   setShowCommentModal: (show: boolean) => void;
@@ -20,6 +21,7 @@ export const CommentModal = ({
   setIsPostingComment: (posting: boolean) => void;
   postComment: (text: string) => Promise<any>;
   showToast: (msg: string) => void;
+  userScoreText?: string;
 }) => {
   if (!showCommentModal || !config) return null;
 
@@ -78,7 +80,7 @@ export const CommentModal = ({
             className="w-full p-2.5 bg-gray-50 rounded-xl font-bold text-xs sm:text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs focus:border-indigo-900 focus:bg-white placeholder:text-gray-400 placeholder:font-normal resize-none transition-colors"
           />
           <p className="text-[10px] text-amber-700 font-bold text-center bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-            ⚠️ This will post a comment on your behalf to this post's comment section.
+            This will post a comment on your behalf to this post's comment section.
           </p>
         </div>
 
@@ -99,7 +101,10 @@ export const CommentModal = ({
               if (!commentText.trim() || isPostingComment) return;
               setIsPostingComment(true);
               try {
-                await postComment(commentText.trim());
+                const finalComment = userScoreText 
+                  ? `${commentText.trim()}\n\n${userScoreText}`
+                  : commentText.trim();
+                await postComment(finalComment);
                 setShowCommentModal(false);
                 setCommentText('');
                 showToast('💬 Comment posted!');
@@ -125,3 +130,7 @@ export const CommentModal = ({
     </div>
   );
 };
+
+
+
+
