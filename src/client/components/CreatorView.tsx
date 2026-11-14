@@ -1,7 +1,6 @@
 import { GameButton } from './GameButton';
 import { getTitlePrefix, getPlaceholder, formatValue } from '../utils';
-
-type GameDataResponse = any; // Just using any for now to avoid importing complex types unnecessarily, or we can use the actual type if needed.
+import type { GameDataResponse } from '../../shared/api';
 
 export const CreatorView = ({
   showCreator,
@@ -32,7 +31,7 @@ export const CreatorView = ({
 }: {
   showCreator: boolean;
   setShowCreator: (val: boolean) => void;
-  data: any;
+  data: GameDataResponse;
   type: 'percentage' | 'cost' | 'count';
   setType: (val: 'percentage' | 'cost' | 'count') => void;
   text: string;

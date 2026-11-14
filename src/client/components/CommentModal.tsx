@@ -19,7 +19,7 @@ export const CommentModal = ({
   setCommentText: (text: string) => void;
   isPostingComment: boolean;
   setIsPostingComment: (posting: boolean) => void;
-  postComment: (text: string) => Promise<any>;
+  postComment: (text: string) => Promise<unknown>;
   showToast: (msg: string) => void;
   userScoreText?: string;
 }) => {
@@ -36,8 +36,8 @@ export const CommentModal = ({
         {/* Header */}
         <div className="w-full flex items-center justify-between">
           <h2 className="text-base sm:text-lg font-black uppercase text-indigo-950 tracking-wide flex items-center gap-1.5">
-            <span>💡</span>
-            <span>Wanted You To Know</span>
+            <span>{config.explanation ? '💡' : '💬'}</span>
+            <span>{config.explanation ? 'Wanted You To Know' : 'Leave a Comment'}</span>
           </h2>
           <button
             type="button"
@@ -61,12 +61,14 @@ export const CommentModal = ({
         )}
 
         {/* Divider */}
-        <div className="border-t border-gray-100" />
+        {config.explanation && <div className="border-t border-gray-100" />}
 
         {/* Comment area */}
         <div className="flex flex-col gap-1 w-full">
           <div className="flex justify-between items-center">
-            <label className="font-bold text-xs text-gray-700 uppercase">💬 Your Reply</label>
+            <label className="font-bold text-xs text-gray-700 uppercase">
+              {config.explanation ? '💬 Your Reply' : '💬 Your Comment'}
+            </label>
             <span className="text-[10px] font-bold text-gray-400">
               {commentText.length}/1000
             </span>
@@ -75,12 +77,12 @@ export const CommentModal = ({
             value={commentText}
             maxLength={1000}
             onChange={(e) => setCommentText(e.target.value)}
-            placeholder="e.g. Wow, I had no idea it was that high!"
+            placeholder={config.explanation ? "e.g. Wow, I had no idea it was that high!" : "e.g. That was much higher than I expected!"}
             rows={3}
             className="w-full p-2.5 bg-gray-50 rounded-xl font-bold text-xs sm:text-sm text-indigo-950 outline-none border-2 border-indigo-900/40 shadow-xs focus:border-indigo-900 focus:bg-white placeholder:text-gray-400 placeholder:font-normal resize-none transition-colors"
           />
-          <p className="text-[10px] text-amber-700 font-bold text-center bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-            This will post a comment on your behalf to this post's comment section.
+          <p className="text-[10px] text-amber-700 font-bold text-center bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 leading-tight">
+            This will post a comment on your behalf to this post's comment section, and will automatically append your guess and distance from the correct answer.
           </p>
         </div>
 

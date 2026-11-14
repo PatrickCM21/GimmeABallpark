@@ -1,5 +1,48 @@
+import type { RefObject } from 'react';
 import { GameButton } from './GameButton';
 import { THEME } from '../theme';
+import type { GameDataResponse, Config } from '../../shared/api';
+
+export interface GameViewProps {
+  data: GameDataResponse;
+  config: Config;
+  currentGuess: number;
+  setCurrentGuess: (val: number) => void;
+  userInteractedRef: RefObject<boolean | null>;
+  animFrameRef: RefObject<number | null>;
+  showResults: boolean;
+  isSubmittingGuess: boolean;
+  buttonShake: boolean;
+  imageError: boolean;
+  setImageError: (val: boolean) => void;
+  animStep?: number;
+  posUser: number;
+  posReal?: number;
+  posAvg?: number;
+  realOpacity: number;
+  avgOpacity: number;
+  displayPosAvg: string;
+  displayPosReal: string;
+  avgSide: string;
+  avgExtended: boolean;
+  userDotShrunk: boolean;
+  gameDisplayVal: (val: number) => string;
+  rMin: number;
+  rMax: number;
+  range: number;
+  resultStatement: string;
+  handleGuessSubmit: () => void;
+  handleResetGame: () => void;
+  setShowCommentModal: (val: boolean) => void;
+  setShowCreator: (val: boolean) => void;
+  setShowStatsModal: (val: boolean) => void;
+  ug: number;
+  avgVal: number;
+  isAnimActive: boolean;
+  isResultsRevealed: boolean;
+  cardExpanded?: boolean;
+  toTrackPct: (val: number) => string;
+}
 
 export const GameView = ({
   data,
@@ -13,10 +56,7 @@ export const GameView = ({
   buttonShake,
   imageError,
   setImageError,
-  animStep,
   posUser,
-  posReal,
-  posAvg,
   realOpacity,
   avgOpacity,
   displayPosAvg,
@@ -33,17 +73,17 @@ export const GameView = ({
   handleResetGame,
   setShowCommentModal,
   setShowCreator,
+  setShowStatsModal,
   ug,
   avgVal,
   isAnimActive,
   isResultsRevealed,
-  cardExpanded,
   toTrackPct
-}: any) => {
+}: GameViewProps) => {
   return (
     <div key="game-content" className="h-full w-full flex flex-col justify-between animate-fade-in">
-      {/* Top bar: Author info on left + Dev Reset button on right */}
-      <div className="flex items-center justify-between shrink-0 mb-1">
+      {/* Top bar: Author info on left + Stats & Dev Reset on right */}
+      <div className="flex items-start justify-between shrink-0 mb-1">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full border-2 border-indigo-950 bg-white p-0.5 shadow-xs overflow-hidden flex items-center justify-center shrink-0">
             {config.authorAvatarUrl ? (
@@ -67,21 +107,35 @@ export const GameView = ({
           </span>
         </div>
 
-        {data.isDevSubreddit && (
-          <button
-            type="button"
-            onClick={handleResetGame}
-            title="Reset Game (Dev Mode)"
-            className="text-[11px] font-black uppercase tracking-wide bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg cursor-pointer flex items-center gap-1 transition-colors"
-          >
-            <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-            </svg>
-            <span className="hidden sm:inline">Reset (Dev)</span>
-            <span className="sm:hidden">Reset</span>
-          </button>
-        )}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {showResults && (
+            <button
+              type="button"
+              onClick={() => setShowStatsModal(true)}
+              className="text-[11px] sm:text-xs font-black uppercase tracking-wide bg-purple-100 hover:bg-purple-200 text-purple-700 border border-purple-300 px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1.5 transition-all shadow-xs active:scale-95 animate-fade-in"
+              title="View Lifetime Stats"
+            >
+              <span>📊</span>
+              <span>Stats</span>
+            </button>
+          )}
+
+          {data.isDevSubreddit && (
+            <button
+              type="button"
+              onClick={handleResetGame}
+              title="Reset Game (Dev Mode)"
+              className="text-[11px] font-black uppercase tracking-wide bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-400 px-2 py-1 rounded-lg cursor-pointer flex items-center gap-1 transition-colors"
+            >
+              <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              <span className="hidden sm:inline">Reset (Dev)</span>
+              <span className="sm:hidden">Reset</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Question Container */}
@@ -411,6 +465,19 @@ overflow-hidden px-1 pb-2 -mb-2 pt-1 -mt-1 ${
                     </div>
                   );
                 })()}
+
+                {/* If no explanation/fact provided, show button for comment modal */}
+                {!config.explanation && (
+                  <div className="mt-1.5 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowCommentModal(true)}
+                      className="text-[10px] sm:text-[11px] font-black text-blue-700 bg-blue-100 hover:bg-blue-200 border border-blue-300 px-3 py-0.5 rounded-full cursor-pointer whitespace-nowrap transition-colors flex items-center gap-1 shadow-2xs"
+                    >
+                      💬 Comment
+                    </button>
+                  </div>
+                )}
               </div>
 
               <GameButton

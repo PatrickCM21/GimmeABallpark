@@ -1,12 +1,24 @@
 import { Hono } from 'hono';
 import { context, redis, reddit } from '@devvit/web/server';
 import { createPost } from '../core/post';
+import { FLAIRS, applyFlair, resolveFlair } from '../core/flair';
+import { homeRunLadders } from '../../shared/data/homeRunLadders';
+import { homeRunKeys } from '../core/homeRunStore';
+import type { HomeRunPostData } from '../../shared/types/homeRun';
 import type { Config } from '../../shared/api';
 import { allBallparks } from '../../shared/data/ballparks';
+import { isDevSubreddit } from '../core/subreddit';
 
 export const scheduler = new Hono();
 
-export const triggerDailyBallparkPost = async (subredditName: string) => {
+export const triggerDailyBallparkPost = async (
+  subredditName: string,
+  options: { isManual?: boolean } = {}
+) => {
+  if (isDevSubreddit(subredditName) && !options.isManual) {
+    throw new Error(`Daily ballpark posts are disabled for dev subreddit (${subredditName})`);
+  }
+
   if (!allBallparks || allBallparks.length === 0) {
     throw new Error('No ballpark options found in configuration');
   }
@@ -34,37 +46,7 @@ export const triggerDailyBallparkPost = async (subredditName: string) => {
   }
   const formattedTitle = `Gimme a Ballpark for ${titlePrefix}${game.text}`;
 
-  // Search or create the "Daily" flair template first
-  let flairId: string | undefined;
-  let flairText: string | undefined = 'Daily';
-
-  try {
-    const templates = await reddit.getPostFlairTemplates(subredditName);
-    let dailyTemplate = templates.find((t) => t.text.toLowerCase() === 'daily');
-
-    if (!dailyTemplate) {
-      console.log(`'Daily' flair template not found on ${subredditName}. Attempting to create it...`);
-      try {
-        dailyTemplate = await reddit.createPostFlairTemplate({
-          subredditName,
-          text: 'Daily',
-          modOnly: true,
-          backgroundColor: '#EAB308', // Ballpark Yellow
-          textColor: 'dark',
-        });
-        console.log(`Created 'Daily' flair template with ID ${dailyTemplate.id}`);
-      } catch (createErr) {
-        console.error('Failed to create flair template (likely missing moderator permissions):', createErr);
-      }
-    }
-
-    if (dailyTemplate) {
-      flairId = dailyTemplate.id;
-      flairText = undefined;
-    }
-  } catch (flairErr) {
-    console.error(`Failed to fetch/create flair template for ${subredditName}:`, flairErr);
-  }
+  const { flairId, flairText } = await resolveFlair(subredditName, FLAIRS.ballpark);
 
   // Construct game configuration
   const config: Config = {
@@ -97,24 +79,7 @@ export const triggerDailyBallparkPost = async (subredditName: string) => {
     redis.set(`post:${idWithPrefix}:config`, JSON.stringify(config)),
   ]);
 
-  // Double-check fallback: apply flair if not attached during submission
-  try {
-    if (flairId) {
-      await reddit.setPostFlair({
-        subredditName,
-        postId: post.id,
-        flairTemplateId: flairId,
-      });
-    } else {
-      await reddit.setPostFlair({
-        subredditName,
-        postId: post.id,
-        text: 'Daily',
-      });
-    }
-  } catch (flairFallbackErr) {
-    console.warn(`Fallback flair application failed for post ${post.id}:`, flairFallbackErr);
-  }
+  await applyFlair(subredditName, post.id, FLAIRS.ballpark, flairId);
 
   // If author/game has an explanation, post it as a top-level Reddit comment
   if (game.explanation && game.explanation.trim()) {
@@ -144,6 +109,14 @@ scheduler.post('/daily-post', async (c) => {
       return c.json({ status: 'error', message: 'Subreddit name is required' }, 400);
     }
 
+    if (isDevSubreddit(subredditName)) {
+      console.log(`Skipping scheduled daily ballpark post for dev subreddit: ${subredditName}`);
+      return c.json({
+        status: 'skipped',
+        message: `Daily ballpark posts are disabled on dev subreddit: ${subredditName}`,
+      }, 200);
+    }
+
     const { game, index, nextIndex, post } = await triggerDailyBallparkPost(subredditName);
 
     return c.json({
@@ -156,5 +129,79 @@ scheduler.post('/daily-post', async (c) => {
       status: 'error',
       message: error instanceof Error ? error.message : String(error),
     }, 500);
+  }
+});
+
+export const triggerDailyHomeRunPost = async (
+  subredditName: string,
+  options: { isManual?: boolean } = {}
+) => {
+  if (isDevSubreddit(subredditName) && !options.isManual) {
+    throw new Error(`Daily home run posts are disabled for dev subreddit (${subredditName})`);
+  }
+
+  if (homeRunLadders.length === 0) {
+    throw new Error('No Home Run ladders found in configuration');
+  }
+
+  const [indexStr, countStr] = await Promise.all([
+    redis.get(homeRunKeys.dailyIndex),
+    redis.get(homeRunKeys.dailyCount),
+  ]);
+  const parsedIndex = indexStr ? parseInt(indexStr, 10) : 0;
+  const index = Number.isNaN(parsedIndex) || parsedIndex < 0 || parsedIndex >= homeRunLadders.length ? 0 : parsedIndex;
+  const puzzleNumber = (countStr ? parseInt(countStr, 10) || 0 : 0) + 1;
+
+  const ladder = homeRunLadders[index];
+  if (!ladder) {
+    throw new Error(`Home Run ladder not found at index ${index}`);
+  }
+
+  const { flairId, flairText } = await resolveFlair(subredditName, FLAIRS.homeRun);
+
+  const postData: HomeRunPostData = { mode: 'homerun', ladderId: ladder.id, puzzleNumber };
+  const post = await createPost(
+    `⚾ Home Run #${puzzleNumber}: ${ladder.title}`,
+    subredditName,
+    false,
+    flairId,
+    flairText,
+    postData
+  );
+
+  await redis.set(homeRunKeys.ladder(post.id), ladder.id);
+  await applyFlair(subredditName, post.id, FLAIRS.homeRun, flairId);
+
+  await Promise.all([
+    redis.set(homeRunKeys.dailyIndex, String((index + 1) % homeRunLadders.length)),
+    redis.set(homeRunKeys.dailyCount, String(puzzleNumber)),
+  ]);
+
+  return { post, ladder, puzzleNumber };
+};
+
+scheduler.post('/daily-homerun-post', async (c) => {
+  try {
+    const subredditName = context.subredditName;
+    if (!subredditName) {
+      return c.json({ status: 'error', message: 'Subreddit name is required' }, 400);
+    }
+
+    if (isDevSubreddit(subredditName)) {
+      console.log(`Skipping scheduled daily home run post for dev subreddit: ${subredditName}`);
+      return c.json(
+        { status: 'skipped', message: `Daily home run posts are disabled on dev subreddit: ${subredditName}` },
+        200
+      );
+    }
+
+    const { ladder, puzzleNumber, post } = await triggerDailyHomeRunPost(subredditName);
+    return c.json(
+      { status: 'success', message: `Home Run #${puzzleNumber} ('${ladder.title}') posted. Post ID: ${post.id}` },
+      200
+    );
+  } catch (error) {
+    console.error('Error running daily home run scheduler:', error);
+    return c.json({ status: 'error', message: error instanceof Error ? error.message : String(error) }, 500);
   }
 });

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { UiResponse } from '@devvit/web/shared';
 import { context, redis, reddit } from '@devvit/web/server';
-import { triggerDailyBallparkPost } from './scheduler';
+import { triggerDailyBallparkPost, triggerDailyHomeRunPost } from './scheduler';
 
 export const menu = new Hono();
 
@@ -54,7 +54,7 @@ menu.post('/trigger-daily', async (c) => {
       );
     }
 
-    const { post, index } = await triggerDailyBallparkPost(subredditName);
+    const { post, index } = await triggerDailyBallparkPost(subredditName, { isManual: true });
     const cleanId = post.id.replace('t3_', '');
     const targetUrl = post.url || (post.permalink ? `https://reddit.com${post.permalink}` : `https://reddit.com/r/${subredditName}/comments/${cleanId}`);
 
@@ -71,6 +71,28 @@ menu.post('/trigger-daily', async (c) => {
       {
         showToast: `Failed to trigger daily post: ${error instanceof Error ? error.message : 'Unknown error'}`,
       },
+      400
+    );
+  }
+});
+
+
+menu.post('/trigger-daily-homerun', async (c) => {
+  try {
+    const subredditName = context.subredditName;
+    if (!subredditName) {
+      return c.json<UiResponse>({ showToast: 'Subreddit name missing in context' }, 400);
+    }
+
+    const { post, puzzleNumber } = await triggerDailyHomeRunPost(subredditName, { isManual: true });
+    const cleanId = post.id.replace('t3_', '');
+    const targetUrl = post.url || (post.permalink ? `https://reddit.com${post.permalink}` : `https://reddit.com/r/${subredditName}/comments/${cleanId}`);
+
+    return c.json<UiResponse>({ showToast: `⚾ Home Run #${puzzleNumber} posted successfully!`, navigateTo: targetUrl }, 200);
+  } catch (error) {
+    console.error(`Error triggering daily home run post: ${error}`);
+    return c.json<UiResponse>(
+      { showToast: `Failed to trigger Home Run: ${error instanceof Error ? error.message : 'Unknown error'}` },
       400
     );
   }

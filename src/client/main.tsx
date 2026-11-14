@@ -1,6 +1,6 @@
 import './index.css';
 import { THEME } from './theme';
-import { StrictMode, useEffect, useState, useRef, type ChangeEvent, type PointerEvent, type CSSProperties, type ReactNode } from 'react';
+import { StrictMode, useEffect, useState, useRef, type ChangeEvent, type PointerEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
 import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse, Config } from '../shared/api';
@@ -42,7 +42,7 @@ const submitGuess = async (guess: number) => {
   return (await res.json()) as GuessResponse;
 };
 
-import { getTitlePrefix, getPlaceholder, formatValue, toTrackPct } from './utils';
+import { formatValue, toTrackPct } from './utils';
 
 const DEFAULT_BALLPARK: Config = {
   ...getDailyBallpark(),
@@ -64,20 +64,22 @@ const postComment = async (text: string) => {
   return res.json();
 };
 
-import { GameButton } from './components/GameButton';
 import { CropModal } from './components/CropModal';
 import { FactModal } from './components/FactModal';
 import { CreatorWarningModal } from './components/CreatorWarningModal';
 import { CommentModal } from './components/CommentModal';
+import { LifetimeStatsModal } from './components/LifetimeStatsModal';
 import { ErrorState } from './components/ErrorState';
 import { LoadingState } from './components/LoadingState';
 import { CreatorView } from './components/CreatorView';
 import { GameView } from './components/GameView';
+import { HomeRunMode } from './homeRun/components/HomeRunMode';
 
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [showStatsModal, setShowStatsModal] = useState(false);
 
   // Synchronize modular theme background with document and CSS variables
   useEffect(() => {
@@ -126,7 +128,6 @@ export const App = () => {
   const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
 
   // Results page: "wanted you to know" fact expansion + comment modal
-  const [factExpanded, setFactExpanded] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
@@ -162,7 +163,7 @@ export const App = () => {
     fetchGameData()
       .then((d) => {
         setData(d);
-        const activeCfg = d.config || (!d.isHub ? DEFAULT_BALLPARK : undefined);
+        const activeCfg = d.mode === 'homerun' ? undefined : d.config || (!d.isHub ? DEFAULT_BALLPARK : undefined);
         if (activeCfg) {
           const mid = Math.round((activeCfg.min + activeCfg.max) / 2);
           const span = activeCfg.max - activeCfg.min;
@@ -354,10 +355,9 @@ export const App = () => {
     }
   };
 
-  // Prevent page scroll while image crop modal is active
-  // Prevent page scroll while image crop modal, fact modal, or comment modal is active
+  // Prevent page scroll while image crop modal, fact modal, comment modal, or stats modal is active
   useEffect(() => {
-    if (showCropModal || showFactModal || showCommentModal || showCreatorWarning) {
+    if (showCropModal || showFactModal || showCommentModal || showCreatorWarning || showStatsModal) {
       const prevOverflow = document.body.style.overflow;
       const prevTouchAction = document.body.style.touchAction;
       document.body.style.overflow = 'hidden';
@@ -367,7 +367,7 @@ export const App = () => {
         document.body.style.touchAction = prevTouchAction;
       };
     }
-  }, [showCropModal, showFactModal, showCommentModal, showCreatorWarning]);
+  }, [showCropModal, showFactModal, showCommentModal, showCreatorWarning, showStatsModal]);
 
   // Non-passive touch listener on crop container to prevent mobile page scrolling while panning
   useEffect(() => {
@@ -516,7 +516,7 @@ export const App = () => {
       return;
     }
 
-    executeCreateSubmit();
+    void executeCreateSubmit();
   };
 
   const handleGuessSubmit = () => {
@@ -626,6 +626,11 @@ export const App = () => {
   // --- 2. FULL-SCREEN LOADING STATE ---
   if (!data) {
     return <LoadingState />;
+  }
+
+  // --- 2b. HOME RUN MODE (its own self-contained experience) ---
+  if (data.mode === 'homerun') {
+    return <HomeRunMode />;
   }
 
   const isCreatorMode = Boolean(data.isHub || showCreator);
@@ -768,7 +773,7 @@ export const App = () => {
     const ans = config.answer;
     const diff = Math.abs(ug - ans);
     
-    let resultStr = "";
+    let resultStr: string;
     if (ans === 0) {
       if (diff === 0) {
         resultStr = "basically spot on";
@@ -807,7 +812,7 @@ export const App = () => {
 
       {/* Main Persistent Card Container (Smoothly extends or shortens without fading out) */}
       <div
-        className={`bg-white rounded-2xl shadow-[0_8px_0_0_#0A7CD5] border-3 border-[#0F2B48] flex flex-col justify-between my-auto h-auto max-h-[95dvh] transition-all duration-500 ease-out ${
+        className={`bg-white rounded-2xl border-3 border-indigo-950 flex flex-col justify-between my-auto h-auto max-h-[95dvh] transition-all duration-500 ease-out ${
           'w-full max-w-lg px-4 pt-4 pb-6 sm:px-5 sm:pt-5 sm:pb-7'
         }`}
       >
@@ -872,6 +877,7 @@ export const App = () => {
             handleResetGame={handleResetGame}
             setShowCommentModal={setShowCommentModal}
             setShowCreator={setShowCreator}
+            setShowStatsModal={setShowStatsModal}
             ug={ug}
             avgVal={avgVal}
             isAnimActive={isAnimActive}
@@ -924,7 +930,7 @@ export const App = () => {
     setShowCreatorWarning={setShowCreatorWarning}
     onProceed={() => {
       localStorage.setItem('hasSeenCreatorWarning', 'true');
-      executeCreateSubmit();
+      void executeCreateSubmit();
     }}
   />
 
@@ -939,6 +945,15 @@ export const App = () => {
     postComment={postComment}
     showToast={showToast}
     userScoreText={userScoreText}
+  />
+
+  <LifetimeStatsModal
+    show={showStatsModal}
+    onClose={() => setShowStatsModal(false)}
+    stats={data.lifetimeStats}
+    username={data.username}
+    snoovatarUrl={undefined}
+    initialTab="ballpark"
   />
 </div>
 );

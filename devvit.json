@@ -37,6 +37,13 @@
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/trigger-daily"
+      },
+      {
+        "label": "Trigger Daily Home Run",
+        "description": "Manually trigger the next Daily Home Run post",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/trigger-daily-homerun"
       }
     ]
   },
@@ -45,6 +52,10 @@
       "daily-post": {
         "endpoint": "/internal/scheduler/daily-post",
         "cron": "0 9 * * *"
+      },
+      "daily-homerun-post": {
+        "endpoint": "/internal/scheduler/daily-homerun-post",
+        "cron": "5 9 * * *"
       }
     }
   },

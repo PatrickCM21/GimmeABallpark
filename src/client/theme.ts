@@ -9,7 +9,7 @@ export const THEME = {
   backgroundDark: '#0A7CD5',
 
   /** Primary card border & solid retro shadow */
-  cardBorder: '#0F2B48',
+  cardBorder: '#1E1B4B',
   cardShadow: '#0A7CD5',
 
   /** Question preamble text ("GIMME A BALLPARK FOR THE") */
@@ -23,7 +23,7 @@ export const THEME = {
 
   /** Guess slider thumb & tooltip badge */
   guessThumb: '#FFD000',
-  guessThumbBorder: '#0F2B48',
+  guessThumbBorder: '#1E1B4B',
 
   /** Submit guess action button */
   submitButton: '#10B981',

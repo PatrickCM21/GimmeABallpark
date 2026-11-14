@@ -9,6 +9,17 @@ import type {
   Config
 } from '../../shared/api';
 
+import { parseHomeRunPostData } from '../../shared/homeRun/engine';
+import { homeRunKeys } from '../core/homeRunStore';
+import { isDevSubreddit } from '../core/subreddit';
+import {
+  loadUserStats,
+  recordNormalBallparkStats,
+  clearNormalBallparkRecorded,
+} from '../core/userStatsStore';
+import type { UserStatsResponse } from '../../shared/types/stats';
+import { createEmptyUserStats } from '../../shared/types/stats';
+
 export const api = new Hono();
 
 api.get('/game-data', async (c) => {
@@ -17,6 +28,11 @@ api.get('/game-data', async (c) => {
     if (!postId) {
       console.warn("api/game-data: context.postId is undefined");
       return c.json({ error: 'postId missing' }, 400);
+    }
+
+    // Home Run posts are served by /api/home-run; just tell the client which mode to render.
+    if (parseHomeRunPostData(context.postData) || (await redis.get(homeRunKeys.ladder(postId)))) {
+      return c.json<GameDataResponse>({ mode: 'homerun', isHub: false, configured: true });
     }
 
     const cleanId = postId.replace('t3_', '');
@@ -111,17 +127,20 @@ api.get('/game-data', async (c) => {
     }
 
     const hubUrl = (await redis.get('hub:latest:url')) || `https://reddit.com/r/${context.subredditName}`;
-    const subName = (context.subredditName || '').toLowerCase();
-    const isDevSubreddit = subName.includes('gimmeaballpark_dev') || subName.endsWith('_dev');
+    const devSubreddit = isDevSubreddit(context.subredditName);
+
+    const lifetimeStats = username ? await loadUserStats(username) : undefined;
 
     return c.json<GameDataResponse>({
       isHub,
       configured,
-      isDevSubreddit,
+      isDevSubreddit: devSubreddit,
       hubUrl,
       config,
       userGuess,
-      stats
+      username,
+      stats,
+      lifetimeStats,
     });
   } catch (error: unknown) {
     console.error("API /game-data Error:", error);
@@ -325,6 +344,21 @@ api.post('/guess', async (c) => {
     const averageError = Math.abs(averageGuess - config.answer);
     const closerThanMajority = userError < averageError;
 
+    let lifetimeStats;
+    try {
+      lifetimeStats = await recordNormalBallparkStats(
+        postId,
+        username,
+        guess,
+        config.answer,
+        config.min,
+        config.max,
+        closerThanMajority
+      );
+    } catch (statsErr) {
+      console.warn("Could not record lifetime stats:", statsErr);
+    }
+
     return c.json<GuessResponse>({
       success: true,
       stats: {
@@ -332,7 +366,8 @@ api.post('/guess', async (c) => {
         averageGuess,
         samples
       },
-      closerThanMajority
+      closerThanMajority,
+      lifetimeStats
     });
   } catch (error: unknown) {
     console.error("API /guess Error:", error);
@@ -359,6 +394,7 @@ api.post('/reset-game', async (c) => {
       await Promise.all([
         redis.del(`post:${idWithPrefix}:user:${username}`),
         redis.del(`post:${cleanId}:user:${username}`),
+        clearNormalBallparkRecorded(postId, username),
       ]);
     }
 
@@ -366,6 +402,36 @@ api.post('/reset-game', async (c) => {
   } catch (error: unknown) {
     console.error("API /reset-game Error:", error);
     return c.json({ error: error instanceof Error ? error.message : "Unknown error in /reset-game" }, 500);
+  }
+});
+
+api.get('/user-stats', async (c) => {
+  try {
+    let username: string | undefined;
+    try {
+      username = await reddit.getCurrentUsername();
+    } catch {
+      // ignore
+    }
+    if (!username) {
+      username = context.userId;
+    }
+
+    if (!username) {
+      return c.json<UserStatsResponse>({
+        username: undefined,
+        stats: createEmptyUserStats(),
+      });
+    }
+
+    const stats = await loadUserStats(username);
+    return c.json<UserStatsResponse>({
+      username,
+      stats,
+    });
+  } catch (error: unknown) {
+    console.error("API /user-stats Error:", error);
+    return c.json({ error: error instanceof Error ? error.message : "Unknown error in /user-stats" }, 500);
   }
 });
 
