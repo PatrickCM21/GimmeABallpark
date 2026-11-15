@@ -7,7 +7,29 @@ import { BaseDiamond } from './BaseDiamond';
 import { OutcomeBadge } from './OutcomeBadge';
 import { RoundPips } from './RoundPips';
 import { SoundToggleButton } from './SoundToggleButton';
+import { LeaderboardModal, TrophyIcon } from './LeaderboardModal';
 import { LifetimeStatsModal } from '../../components/LifetimeStatsModal';
+
+const StatsIcon = ({ size = 15, className = '' }: { size?: number; className?: string }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    className={className}
+    fill="none"
+    stroke="#1E1B4B"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    style={{ display: 'inline-block', verticalAlign: '-0.15em', flexShrink: 0 }}
+    aria-hidden="true"
+  >
+    <rect x="3" y="3" width="18" height="18" rx="3" fill="#ffffff" />
+    <rect x="6.5" y="11" width="3" height="7" rx="0.5" fill="#22c55e" strokeWidth="1.5" />
+    <rect x="10.5" y="7" width="3" height="11" rx="0.5" fill="#ef4444" strokeWidth="1.5" />
+    <rect x="14.5" y="13" width="3" height="5" rx="0.5" fill="#3b82f6" strokeWidth="1.5" />
+  </svg>
+);
 
 type ResultScreenProps = {
   outcomes: readonly HomeRunOutcome[];
@@ -16,6 +38,7 @@ type ResultScreenProps = {
   snoovatarUrl?: string | undefined;
   username?: string | undefined;
   lifetimeStats?: UserLifetimeStats | undefined;
+  onTryAgain: () => void;
   /** Provided only where replaying is allowed (dev subreddits). */
   onReset?: (() => void) | undefined;
 };
@@ -47,11 +70,13 @@ export const ResultScreen = ({
   snoovatarUrl,
   username,
   lifetimeStats,
+  onTryAgain,
   onReset,
 }: ResultScreenProps) => {
   const bases = countBases(outcomes);
   const headline = getHeadline(bases);
   const [showStatsModal, setShowStatsModal] = useState(false);
+  const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
 
   // Starts viewing the last question attempted by the player (e.g. Q1 if out on Q1, Q4 if home run)
   const initialRound = Math.max(0, Math.min(outcomes.length - 1, rounds.length - 1));
@@ -69,39 +94,73 @@ export const ResultScreen = ({
 
   return (
     <div className="relative flex flex-col items-center justify-between text-center animate-pop-bounce w-full h-full max-h-full overflow-hidden px-1 py-0.5 gap-1">
-      {/* Top-right Sound Toggle */}
+      {/* Top-left Stats & Leaderboard (icon-only on mobile, out of flow so they don't push content down) */}
+      <div className="absolute top-0.5 left-0.5 z-30 flex flex-col items-start gap-1.5">
+        <button
+          type="button"
+          onClick={() => setShowStatsModal(true)}
+          className="flex items-center gap-1.5 bg-sky-100 hover:bg-sky-200 active:scale-95 text-sky-950 text-[11px] font-black uppercase tracking-wider p-1.5 sm:px-3.5 sm:py-1 rounded-full border-2 border-sky-400 shadow-[0_2px_0_0_#0284C7] cursor-pointer transition-transform"
+          title="Stats"
+          aria-label="Stats"
+        >
+          <StatsIcon className="w-6 h-6 sm:w-4 sm:h-4" />
+          <span className="hidden sm:inline">Stats</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowLeaderboardModal(true)}
+          className="flex items-center gap-1.5 bg-amber-100 hover:bg-amber-200 active:scale-95 text-amber-950 text-[11px] font-black uppercase tracking-wider p-1.5 sm:px-3 sm:py-1 rounded-full border-2 border-amber-400 shadow-[0_2px_0_0_#D97706] cursor-pointer transition-transform whitespace-nowrap"
+          title="Leaderboard"
+          aria-label="Leaderboard"
+        >
+          <TrophyIcon className="w-6 h-6 sm:w-4 sm:h-4" />
+          <span className="hidden sm:inline">Leaderboard</span>
+        </button>
+      </div>
+
+      {/* Top-right Sound Toggle (out of flow) */}
       <div className="absolute top-0.5 right-0.5 z-30">
         <SoundToggleButton />
       </div>
 
-      {/* Header with title, subtitle, and action buttons underneath */}
-      <div className="flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
-        <h2 className={`text-xl sm:text-2xl font-black uppercase leading-tight ${headline.tone}`}>{headline.title}</h2>
-        <p className="text-[11px] sm:text-xs font-semibold text-slate-600">{headline.subtitle}</p>
+      {/* Header with title, subtitle, and Try Again button underneath */}
+      <div className="w-full flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
+        <h2
+          className={`w-full px-[88px] sm:px-28 text-lg sm:text-2xl font-black uppercase leading-tight text-center ${headline.tone}`}
+        >
+          {headline.title}
+        </h2>
+        <p className="text-[11px] sm:text-xs font-semibold text-slate-600 px-11 sm:px-0">{headline.subtitle}</p>
 
-        {/* Action buttons below the title so they never overlap */}
-        <div className="flex items-center justify-center gap-2 mt-1">
-          <button
-            type="button"
-            onClick={() => setShowStatsModal(true)}
-            className="flex items-center gap-1.5 bg-sky-100 hover:bg-sky-200 active:scale-95 text-sky-950 text-[11px] font-black uppercase tracking-wider px-3.5 py-1 rounded-full border-2 border-sky-400 shadow-[0_2px_0_0_#0284C7] cursor-pointer transition-transform"
-            title="Stats"
-          >
-            <span>📊</span>
-            <span>Stats</span>
-          </button>
-
-          {onReset && (
+        {/* Try Again button & notice below the title */}
+        <div className="flex flex-col items-center gap-1 mt-1">
+          <div className="flex items-center justify-center gap-2">
             <button
               type="button"
-              onClick={onReset}
-              className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 active:scale-95 text-amber-950 text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border-2 border-amber-600 shadow-xs cursor-pointer transition-transform"
-              title="Reset ladder progress (dev mode)"
+              onClick={onTryAgain}
+              className="flex items-center gap-1.5 bg-green-500 hover:bg-green-400 active:scale-95 text-white text-[11px] font-black uppercase tracking-wider px-4 py-1 rounded-full border-2 border-indigo-950 shadow-[0_2px_0_0_#15803d] cursor-pointer transition-transform"
+              title="Try Again"
             >
               <span>↻</span>
-              <span>Dev Reset</span>
+              <span>Try Again</span>
             </button>
-          )}
+
+            {onReset && (
+              <button
+                type="button"
+                onClick={onReset}
+                className="flex items-center gap-1 bg-amber-400 hover:bg-amber-300 active:scale-95 text-amber-950 text-[10px] sm:text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border-2 border-amber-600 shadow-xs cursor-pointer transition-transform"
+                title="Reset ladder progress (dev mode)"
+              >
+                <span>↻</span>
+                <span>Dev Reset</span>
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] font-semibold text-slate-500 leading-tight">
+            This won&apos;t count towards the leaderboard
+          </p>
         </div>
       </div>
 
@@ -175,6 +234,13 @@ export const ResultScreen = ({
         onClose={() => setShowStatsModal(false)}
         stats={lifetimeStats}
         username={username}
+        snoovatarUrl={snoovatarUrl}
+      />
+
+      <LeaderboardModal
+        isOpen={showLeaderboardModal}
+        onClose={() => setShowLeaderboardModal(false)}
+        currentUsername={username}
         snoovatarUrl={snoovatarUrl}
       />
     </div>

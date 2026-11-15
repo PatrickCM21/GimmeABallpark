@@ -115,6 +115,12 @@ export type HomeRunAnswerResponse = {
   lifetimeStats?: UserLifetimeStats | undefined;
 };
 
+export type HomeRunPracticeAnswerResponse = {
+  outcome: HomeRunOutcome;
+  reveal: HomeRunReveal;
+  stats: HomeRunRoundStat[];
+};
+
 export type HomeRunErrorResponse = {
   error: string;
 };

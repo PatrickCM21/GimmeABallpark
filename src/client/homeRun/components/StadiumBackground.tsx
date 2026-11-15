@@ -701,21 +701,10 @@ const DrawingRound4 = ({ audience = [] }: { audience?: HomeRunAudienceMember[] }
 const DrawingRound5 = ({ audience = [] }: { audience?: HomeRunAudienceMember[] }) => (
   <div className="absolute inset-0 overflow-hidden bg-[#0A1B2E]">
     <DrawingRound4 audience={audience} />
-    {/* Confetti & Golden Home Run Celebration Overlay */}
+    {/* Golden Home Run Celebration Overlay */}
     <div className="absolute inset-0 pointer-events-none z-50 flex flex-col items-center justify-start pt-3 bg-yellow-400/10">
       <div className="px-5 py-1 rounded-full bg-yellow-400 border-2 border-indigo-950 text-indigo-950 font-black text-xs uppercase tracking-widest shadow-xl animate-bounce">
         🏆 HOME RUN INTO THE SNOO BLEACHERS! 🏆
-      </div>
-      <div className="absolute inset-0 flex justify-around pointer-events-none overflow-hidden">
-        {['🎊', '⭐', '✨', '🎉', '⚾', '✨', '🎊', '🎉'].map((icon, i) => (
-          <span
-            key={i}
-            className="text-2xl animate-fall"
-            style={{ animationDelay: `${i * 250}ms`, animationDuration: '2.5s' }}
-          >
-            {icon}
-          </span>
-        ))}
       </div>
     </div>
   </div>

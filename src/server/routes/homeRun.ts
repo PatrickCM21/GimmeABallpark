@@ -20,6 +20,7 @@ import type {
   HomeRunErrorResponse,
   HomeRunGameState,
   HomeRunLadder,
+  HomeRunPracticeAnswerResponse,
   HomeRunStartResponse,
   HomeRunStoredProgress,
 } from '../../shared/types/homeRun';
@@ -39,7 +40,9 @@ import {
   recordHomeRunStats,
   clearHomeRunRecorded,
 } from '../core/userStatsStore';
+import { getLeaderboard } from '../core/leaderboard';
 import type { UserLifetimeStats } from '../../shared/types/stats';
+import type { LeaderboardPeriod, LeaderboardResponse } from '../../shared/types/leaderboard';
 
 export const homeRun = new Hono();
 
@@ -128,7 +131,7 @@ homeRun.get('/state', async (c) => {
 
     if (isRunFinished(progress.outcomes)) {
       try {
-        await recordHomeRunStats(player.postId, player.username, countBases(progress.outcomes));
+        await recordHomeRunStats(player.postId, player.username, countBases(progress.outcomes), snoovatarUrl);
       } catch (err) {
         console.warn('Could not record Home Run lifetime stats in /state:', err);
       }
@@ -254,6 +257,42 @@ homeRun.post('/answer', async (c) => {
   }
 });
 
+/** Practice replay after finishing the official run: grades picks without saving progress or stats. */
+homeRun.post('/practice-answer', async (c) => {
+  try {
+    const player = await getPlayerContext();
+    if (isError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+
+    const body: unknown = await c.req.json();
+    if (!isValidAnswerRequest(body)) return c.json<HomeRunErrorResponse>({ error: 'Invalid answer' }, 400);
+
+    const now = Date.now();
+    const current = await settleExpiredRound(
+      player.postId,
+      player.username,
+      await loadProgress(player.postId, player.username),
+      now
+    );
+    if (!isRunFinished(current.outcomes)) {
+      return c.json<HomeRunErrorResponse>({ error: 'Finish your official run first' }, 409);
+    }
+
+    const matchup = Number.isInteger(body.round) ? player.ladder.rounds[body.round] : undefined;
+    if (!matchup) return c.json<HomeRunErrorResponse>({ error: 'Round not found' }, 400);
+
+    const outcome = judgePick(matchup, body.pick);
+
+    return c.json<HomeRunPracticeAnswerResponse>({
+      outcome,
+      reveal: buildReveal(matchup),
+      stats: await loadRoundStats(player.postId),
+    });
+  } catch (error: unknown) {
+    console.error('API /home-run/practice-answer Error:', error);
+    return c.json<HomeRunErrorResponse>({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+  }
+});
+
 /** Dev subreddits only: lets testers replay the daily ladder. */
 homeRun.post('/reset', async (c) => {
   if (!isDevSubreddit()) return c.json<HomeRunErrorResponse>({ error: 'Not available' }, 403);
@@ -262,4 +301,34 @@ homeRun.post('/reset', async (c) => {
   await clearProgress(player.postId, player.username);
   await clearHomeRunRecorded(player.postId, player.username);
   return c.json({ success: true });
+});
+
+homeRun.get('/leaderboard', async (c) => {
+  try {
+    const periodQuery = c.req.query('period');
+    const period: LeaderboardPeriod = periodQuery === 'weekly' ? 'weekly' : 'all_time';
+    const pageQuery = c.req.query('page');
+    const page = pageQuery ? parseInt(pageQuery, 10) : 1;
+    const pageSizeQuery = c.req.query('pageSize');
+    const pageSize = pageSizeQuery ? parseInt(pageSizeQuery, 10) : 10;
+
+    let username: string | undefined;
+    try {
+      username = await reddit.getCurrentUsername();
+    } catch {
+      // ignore
+    }
+
+    const data = await getLeaderboard(
+      period,
+      isNaN(page) ? 1 : page,
+      isNaN(pageSize) ? 10 : pageSize,
+      username
+    );
+
+    return c.json<LeaderboardResponse>(data);
+  } catch (error: unknown) {
+    console.error('API /home-run/leaderboard Error:', error);
+    return c.json<HomeRunErrorResponse>({ error: 'Failed to fetch leaderboard' }, 500);
+  }
 });

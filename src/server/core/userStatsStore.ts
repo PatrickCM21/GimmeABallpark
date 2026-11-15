@@ -5,7 +5,9 @@ import {
   calculateBallparkCloseness,
   applyHomeRunToStats,
   applyNormalGameToStats,
+  calculateTotalBases,
 } from '../../shared/types/stats';
+import { ensureWeeklyBaseInitialized, syncUserLeaderboard } from './leaderboard';
 
 const cleanId = (postId: string): string => postId.replace('t3_', '');
 const normalizeUser = (username: string): string => username.trim().toLowerCase();
@@ -52,21 +54,28 @@ export const loadUserStats = async (username: string): Promise<UserLifetimeStats
 export const recordHomeRunStats = async (
   postId: string,
   username: string,
-  bases: number
+  bases: number,
+  snoovatarUrl?: string | undefined
 ): Promise<UserLifetimeStats> => {
   if (!username) return createEmptyUserStats();
   const recordedKey = userStatsKeys.homeRunRecorded(postId, username);
   const alreadyRecorded = await redis.get(recordedKey);
   if (alreadyRecorded) {
-    return loadUserStats(username);
+    const existing = await loadUserStats(username);
+    void syncUserLeaderboard(username, snoovatarUrl).catch((err) =>
+      console.warn('Could not sync leaderboard on existing stats:', err)
+    );
+    return existing;
   }
 
   await redis.set(recordedKey, '1');
 
   const current = await loadUserStats(username);
+  await ensureWeeklyBaseInitialized(username, calculateTotalBases(current));
   const updated = applyHomeRunToStats(current, bases);
 
   await redis.set(userStatsKeys.stats(username), JSON.stringify(updated));
+  await syncUserLeaderboard(username, snoovatarUrl);
   return updated;
 };
 

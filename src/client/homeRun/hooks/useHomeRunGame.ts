@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isRunFinished } from '../../../shared/homeRun/engine';
 import type { HomeRunGameState, HomeRunOutcome, HomeRunReveal, HomeRunRoundStat, HomeRunSide } from '../../../shared/types/homeRun';
 import type { UserLifetimeStats } from '../../../shared/types/stats';
 import { homeRunApi } from '../homeRunApi';
@@ -38,6 +39,8 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
 
   const busyRef = useRef(false);
   const roundRef = useRef(activeRound);
+  const outcomesRef = useRef<HomeRunOutcome[]>(initial.progress.outcomes);
+  const isPracticeRef = useRef(false);
   const mountedRef = useRef(true);
   const pendingNextRoundRef = useRef<{ finished: boolean; nextRound: number } | null>(null);
 
@@ -93,20 +96,43 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
     }
 
     try {
-      const [res] = await Promise.all([
-        homeRunApi.answer({ round: roundRef.current, pick: side }),
-        wait(side ? STRIKE_MS : 0),
-      ]);
-      if (!mountedRef.current) return;
+      let outcome: HomeRunOutcome;
+      let nextReveal: HomeRunReveal;
+      let nextOutcomes: HomeRunOutcome[];
+      let finished: boolean;
 
-      setReveal(res.reveal);
-      setOutcomes(res.progress.outcomes);
-      setStats(res.stats);
-      if (res.lifetimeStats) {
-        setLifetimeStats(res.lifetimeStats);
+      if (isPracticeRef.current) {
+        const [res] = await Promise.all([
+          homeRunApi.practiceAnswer({ round: roundRef.current, pick: side }),
+          wait(side ? STRIKE_MS : 0),
+        ]);
+        if (!mountedRef.current) return;
+        outcome = res.outcome;
+        nextReveal = res.reveal;
+        nextOutcomes = [...outcomesRef.current, outcome];
+        finished = isRunFinished(nextOutcomes);
+        setStats(res.stats);
+      } else {
+        const [res] = await Promise.all([
+          homeRunApi.answer({ round: roundRef.current, pick: side }),
+          wait(side ? STRIKE_MS : 0),
+        ]);
+        if (!mountedRef.current) return;
+        outcome = res.outcome;
+        nextReveal = res.reveal;
+        nextOutcomes = res.progress.outcomes;
+        finished = res.progress.finished;
+        setStats(res.stats);
+        if (res.lifetimeStats) {
+          setLifetimeStats(res.lifetimeStats);
+        }
       }
 
-      if (res.outcome === 'correct') {
+      outcomesRef.current = nextOutcomes;
+      setReveal(nextReveal);
+      setOutcomes(nextOutcomes);
+
+      if (outcome === 'correct') {
         // Ball hits the correct pane: cut off game music right to smash + crowd wow reaction
         stopGameMusic();
         setPhase('smash');
@@ -118,16 +144,16 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
         if (!mountedRef.current) return;
 
         // Transition to base running animation!
-        setRunningToBase(res.progress.outcomes.length);
+        setRunningToBase(nextOutcomes.length);
         pendingNextRoundRef.current = {
-          finished: res.progress.finished,
-          nextRound: res.progress.outcomes.length,
+          finished,
+          nextRound: nextOutcomes.length,
         };
         setPhase('running_base');
       } else {
         // Ball hits the wrong pane (or timed out): cut off game music right to reaction
         stopGameMusic();
-        const isWrongPick = res.outcome === 'wrong' && side !== null;
+        const isWrongPick = outcome === 'wrong' && side !== null;
         setPhase(isWrongPick ? 'miss' : 'timeout');
         if (isWrongPick) {
           playSound('wallHit');
@@ -177,9 +203,21 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
   );
 
   const begin = useCallback(async () => {
+    if (isPracticeRef.current) {
+      outcomesRef.current = [];
+      setOutcomes([]);
+      roundRef.current = 0;
+      setActiveRound(0);
+      setPick(null);
+      setReveal(null);
+      setDeadlineAt(Date.now() + initial.timeLimitMs);
+      setPhase('live');
+      return;
+    }
     try {
       const { progress } = await homeRunApi.start();
       if (!mountedRef.current) return;
+      outcomesRef.current = progress.outcomes;
       setOutcomes(progress.outcomes);
       roundRef.current = progress.outcomes.length;
       setActiveRound(roundRef.current);
@@ -193,6 +231,21 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
       setError(e instanceof Error ? e.message : 'Could not start');
     }
   }, [initial.timeLimitMs]);
+
+  const tryAgain = useCallback(() => {
+    if (busyRef.current) return;
+    isPracticeRef.current = true;
+    pendingNextRoundRef.current = null;
+    roundRef.current = 0;
+    outcomesRef.current = [];
+    setOutcomes([]);
+    setActiveRound(0);
+    setDeadlineAt(null);
+    setPick(null);
+    setReveal(null);
+    setRunningToBase(1);
+    setPhase('intro');
+  }, []);
 
   const choose = useCallback((side: HomeRunSide, point: Point) => void submit(side, point), [submit]);
 
@@ -209,6 +262,7 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
     completeBaseRun,
     lifetimeStats,
     begin,
+    tryAgain,
     choose,
   };
 };

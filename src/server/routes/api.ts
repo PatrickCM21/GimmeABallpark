@@ -17,8 +17,10 @@ import {
   recordNormalBallparkStats,
   clearNormalBallparkRecorded,
 } from '../core/userStatsStore';
+import { getLeaderboard } from '../core/leaderboard';
 import type { UserStatsResponse } from '../../shared/types/stats';
 import { createEmptyUserStats } from '../../shared/types/stats';
+import type { LeaderboardPeriod, LeaderboardResponse } from '../../shared/types/leaderboard';
 
 export const api = new Hono();
 
@@ -453,5 +455,35 @@ api.post('/post-comment', async (c) => {
   } catch (error: unknown) {
     console.error("API /post-comment Error:", error);
     return c.json({ error: error instanceof Error ? error.message : "Unknown error in /post-comment" }, 500);
+  }
+});
+
+api.get('/leaderboard', async (c) => {
+  try {
+    const periodQuery = c.req.query('period');
+    const period: LeaderboardPeriod = periodQuery === 'weekly' ? 'weekly' : 'all_time';
+    const pageQuery = c.req.query('page');
+    const page = pageQuery ? parseInt(pageQuery, 10) : 1;
+    const pageSizeQuery = c.req.query('pageSize');
+    const pageSize = pageSizeQuery ? parseInt(pageSizeQuery, 10) : 10;
+
+    let username: string | undefined;
+    try {
+      username = await reddit.getCurrentUsername();
+    } catch {
+      // ignore
+    }
+
+    const data = await getLeaderboard(
+      period,
+      isNaN(page) ? 1 : page,
+      isNaN(pageSize) ? 10 : pageSize,
+      username
+    );
+
+    return c.json<LeaderboardResponse>(data);
+  } catch (error: unknown) {
+    console.error('API Error /leaderboard:', error);
+    return c.json({ error: 'Failed to fetch leaderboard' }, 500);
   }
 });

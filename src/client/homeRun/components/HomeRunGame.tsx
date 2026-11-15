@@ -136,6 +136,7 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
             snoovatarUrl={state.snoovatarUrl}
             username={state.username}
             lifetimeStats={game.lifetimeStats ?? state.lifetimeStats}
+            onTryAgain={game.tryAgain}
             onReset={state.canReset ? onReset : undefined}
           />
         )}

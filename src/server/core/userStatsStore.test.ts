@@ -5,6 +5,7 @@ import {
   calculateBallparkCloseness,
   applyHomeRunToStats,
   applyNormalGameToStats,
+  calculateTotalBases,
 } from '../../shared/types/stats.ts';
 
 test('calculateBallparkCloseness computes accuracy and thresholds correctly', () => {
@@ -72,6 +73,8 @@ test('applyHomeRunToStats tracks homebases, 1st, 2nd, 3rd bases accurately', () 
   assert.equal(stats.homeRunGamesPlayed, 5);
   assert.equal(stats.strikeouts, 1);
   assert.equal(stats.homeBases, 1);
+  // 1*1 + 1*2 + 1*3 + 1*4 = 10 total bases
+  assert.equal(calculateTotalBases(stats), 10);
 });
 
 test('applyNormalGameToStats tracks games played and running average closeness', () => {

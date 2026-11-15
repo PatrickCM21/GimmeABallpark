@@ -77,6 +77,12 @@ export const applyHomeRunToStats = (current: UserLifetimeStats, bases: number): 
   return updated;
 };
 
+export const calculateTotalBases = (stats: UserLifetimeStats): number =>
+  stats.firstBases * 1 +
+  stats.secondBases * 2 +
+  stats.thirdBases * 3 +
+  stats.homeBases * 4;
+
 export const applyNormalGameToStats = (
   current: UserLifetimeStats,
   closeness: BallparkClosenessResult,
