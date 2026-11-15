@@ -6,6 +6,7 @@ import { BASE_LABELS } from '../constants';
 import { BaseDiamond } from './BaseDiamond';
 import { OutcomeBadge } from './OutcomeBadge';
 import { RoundPips } from './RoundPips';
+import { SoundToggleButton } from './SoundToggleButton';
 import { LifetimeStatsModal } from '../../components/LifetimeStatsModal';
 
 type ResultScreenProps = {
@@ -68,6 +69,11 @@ export const ResultScreen = ({
 
   return (
     <div className="relative flex flex-col items-center justify-between text-center animate-pop-bounce w-full h-full max-h-full overflow-hidden px-1 py-0.5 gap-1">
+      {/* Top-right Sound Toggle */}
+      <div className="absolute top-0.5 right-0.5 z-30">
+        <SoundToggleButton />
+      </div>
+
       {/* Header with title, subtitle, and action buttons underneath */}
       <div className="flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
         <h2 className={`text-xl sm:text-2xl font-black uppercase leading-tight ${headline.tone}`}>{headline.title}</h2>

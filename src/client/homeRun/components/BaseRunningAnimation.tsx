@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { playSound, type SoundHandle } from '../sounds';
 import { SnooAvatar } from './SnooAvatar';
+import { SoundToggleButton } from './SoundToggleButton';
 
 type BaseRunningAnimationProps = {
   /** Target base reached: 1 = First base, 2 = Second base, 3 = Third base, 4 = Home plate (Home Run) */
@@ -197,26 +199,31 @@ export const BaseRunningAnimation = ({
   });
 
   const route = RUSH_ROUTES[toBase] ?? DEFAULT_ROUTE;
+  const runSoundRef = useRef<SoundHandle | null>(null);
 
   useEffect(() => {
-    // 50ms: Begin sprinting down the baseline
+    // 50ms: Begin sprinting down the baseline with dirt scuffling sound
     const startTimer = setTimeout(() => {
       setHasStarted(true);
+      runSoundRef.current = playSound('snooRun', { loop: true });
     }, 50);
 
     // 900ms: Slide into base & safe slam callout
     const arriveTimer = setTimeout(() => {
+      runSoundRef.current?.stop();
       setArrived(true);
     }, 900);
 
     return () => {
       clearTimeout(startTimer);
       clearTimeout(arriveTimer);
+      runSoundRef.current?.stop();
     };
   }, []);
 
   const handleProceed = () => {
     if (phasing) return;
+    runSoundRef.current?.stop();
     setPhasing(true);
     setTimeout(() => {
       onComplete();
@@ -235,6 +242,11 @@ export const BaseRunningAnimation = ({
         }`}
       aria-label={`Running to ${route.toName}`}
     >
+      {/* Top-right Sound Toggle */}
+      <div className="w-full flex justify-end shrink-0 z-30">
+        <SoundToggleButton />
+      </div>
+
       {/* Center Field: Scaled-up 4-Base Baseball Diamond */}
       <div className="relative w-full flex-1 flex items-center justify-center my-1 min-h-0">
         <div className="relative w-64 h-64 xs:w-72 xs:h-72 sm:w-80 sm:h-80 aspect-square select-none">

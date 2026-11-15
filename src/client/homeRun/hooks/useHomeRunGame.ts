@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { HomeRunGameState, HomeRunOutcome, HomeRunReveal, HomeRunRoundStat, HomeRunSide } from '../../../shared/types/homeRun';
 import type { UserLifetimeStats } from '../../../shared/types/stats';
 import { homeRunApi } from '../homeRunApi';
-import { MISS_SETTLE_MS, SERVE_MS, SMASH_SETTLE_MS, STRIKE_MS } from '../constants';
+import { FALL_MS, MISS_SETTLE_MS, SERVE_MS, SMASH_SETTLE_MS, STRIKE_MS } from '../constants';
+import { playSound, preloadSounds, startGameMusic, stopGameMusic, unlockAudio } from '../sounds';
 import { useCountdown } from './useCountdown';
 import type { Point } from './useArenaGeometry';
 
@@ -42,10 +43,21 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
 
   useEffect(() => {
     mountedRef.current = true;
+    preloadSounds();
     return () => {
       mountedRef.current = false;
+      stopGameMusic();
     };
   }, []);
+
+  // Play the 10-second game music while the player is choosing their option
+  useEffect(() => {
+    if (phase === 'live') {
+      startGameMusic();
+    } else if (phase !== 'resolving') {
+      stopGameMusic();
+    }
+  }, [phase]);
 
   // serving -> live once the swing animation has played
   useEffect(() => {
@@ -57,9 +69,28 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
   const submit = useCallback(async (side: HomeRunSide | null, point: Point | null) => {
     if (busyRef.current) return;
     busyRef.current = true;
+    unlockAudio();
 
     setPick(side && point ? { side, point } : null);
     setPhase(side ? 'resolving' : 'timeout');
+
+    let fallingHandle: { stop: () => void } | null = null;
+    if (side) {
+      playSound('throw', { volume: 0.65 });
+    } else {
+      // Timer ran out: cut off game music immediately and play falling sound as ball drops
+      stopGameMusic();
+      fallingHandle = playSound('falling');
+      setTimeout(() => {
+        fallingHandle?.stop();
+        if (mountedRef.current) {
+          playSound('thump');
+          setTimeout(() => {
+            if (mountedRef.current) playSound('crowdAwh');
+          }, 80);
+        }
+      }, FALL_MS - 60);
+    }
 
     try {
       const [res] = await Promise.all([
@@ -76,7 +107,13 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
       }
 
       if (res.outcome === 'correct') {
+        // Ball hits the correct pane: cut off game music right to smash + crowd wow reaction
+        stopGameMusic();
         setPhase('smash');
+        playSound('glassSmash');
+        setTimeout(() => {
+          if (mountedRef.current) playSound('crowdWow');
+        }, 90);
         await wait(SMASH_SETTLE_MS);
         if (!mountedRef.current) return;
 
@@ -88,12 +125,26 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
         };
         setPhase('running_base');
       } else {
-        setPhase(res.outcome === 'wrong' ? 'miss' : 'timeout');
+        // Ball hits the wrong pane (or timed out): cut off game music right to reaction
+        stopGameMusic();
+        const isWrongPick = res.outcome === 'wrong' && side !== null;
+        setPhase(isWrongPick ? 'miss' : 'timeout');
+        if (isWrongPick) {
+          playSound('wallHit');
+          setTimeout(() => {
+            if (mountedRef.current) playSound('crowdAwh');
+          }, 90);
+          setTimeout(() => {
+            if (mountedRef.current) playSound('thump', { volume: 0.8 });
+          }, FALL_MS - 60);
+        }
         await wait(MISS_SETTLE_MS);
         if (!mountedRef.current) return;
         setPhase('result');
       }
     } catch (e: unknown) {
+      fallingHandle?.stop();
+      stopGameMusic();
       if (mountedRef.current) setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
       busyRef.current = false;
@@ -103,6 +154,7 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
   const completeBaseRun = useCallback(() => {
     const pending = pendingNextRoundRef.current;
     if (pending?.finished) {
+      playSound('gameWin');
       setPhase('result');
       return;
     }

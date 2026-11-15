@@ -7,6 +7,7 @@ import { IntroPanel } from './IntroPanel';
 import { MatchupBoard } from './MatchupBoard';
 import { ResultScreen } from './ResultScreen';
 import { RoundPips } from './RoundPips';
+import { SoundToggleButton } from './SoundToggleButton';
 import { StadiumBackground } from './StadiumBackground';
 import { useHomeRunGame } from '../hooks/useHomeRunGame';
 
@@ -83,8 +84,9 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
       <div className="relative z-10 bg-white/95 backdrop-blur-md rounded-2xl border-3 border-indigo-950 w-full max-w-xl p-2.5 sm:p-3.5 h-full max-h-full flex flex-col justify-between overflow-hidden">
         {isPlaying && matchup && (
           <div className="flex flex-col h-full gap-2">
-            <div className="flex items-center justify-end shrink-0">
+            <div className="flex items-center justify-between gap-2 shrink-0">
               <RoundPips total={HOME_RUN_ROUND_COUNT} outcomes={outcomes} activeRound={activeRound} />
+              <SoundToggleButton />
             </div>
             <div className="shrink-0">
               <CountdownBar msLeft={game.msLeft} totalMs={state.timeLimitMs} />

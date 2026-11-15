@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { HOME_RUN_ROUND_COUNT } from '../../../shared/homeRun/engine';
 import type { HomeRunOutcome } from '../../../shared/types/homeRun';
 import { GameButton } from '../../components/GameButton';
+import { playSound, preloadSounds, unlockAudio, type SoundHandle } from '../sounds';
 import { BaseballBat } from './BaseballBat';
 import { FullBodySnoo } from './FullBodySnoo';
 import { HurlingBall } from './HurlingBall';
 import { RoundPips } from './RoundPips';
 import { SnooAvatar } from './SnooAvatar';
+import { SoundToggleButton } from './SoundToggleButton';
 
 type IntroPanelProps = {
   ladderTitle: string;
@@ -43,6 +45,7 @@ export const IntroPanel = ({
   const fieldRef = useRef<HTMLDivElement>(null);
   const batAnchorRef = useRef<HTMLDivElement>(null);
   const timeoutsRef = useRef<number[]>([]);
+  const runSoundRef = useRef<SoundHandle | null>(null);
   const hasTriggeredPlayRef = useRef(false);
 
   const resuming = outcomes.length > 0;
@@ -50,14 +53,22 @@ export const IntroPanel = ({
 
   // Initial pitcher delivery animation: Snoo throws ball upwards into the strike zone with wind lines
   useEffect(() => {
+    preloadSounds();
+    // Play original throw sound when pitcher releases the ball (~180ms into windup)
+    const throwTimer = window.setTimeout(() => {
+      playSound('throw');
+    }, 180);
+
     const riseTimer = window.setTimeout(() => {
       setBallState('hurling');
       setIsPitching(false);
     }, 880);
 
     return () => {
+      window.clearTimeout(throwTimer);
       window.clearTimeout(riseTimer);
       timeoutsRef.current.forEach((id) => window.clearTimeout(id));
+      runSoundRef.current?.stop();
     };
   }, []);
 
@@ -98,6 +109,7 @@ export const IntroPanel = ({
 
   const handleSwing = () => {
     if (isSwinging) return;
+    unlockAudio();
     setIsSwinging(true);
 
     if (resuming) {
@@ -105,17 +117,25 @@ export const IntroPanel = ({
       return;
     }
 
-    // Step 1: Drop ball into strike zone & bat whip
+    // Step 1: Drop ball into strike zone & bat whip (play throw sound as pitch darts in)
     setBallState('hit');
     setStage('contact');
+    playSound('throw', { volume: 0.7 });
 
-    // Step 2: Contact hit occurs at ~400ms -> start running sprint
+    // Bat hitting the ball at the moment of contact (~280ms)
+    const tHit = window.setTimeout(() => {
+      playSound('batHit');
+    }, 280);
+
+    // Step 2: Contact hit occurs at ~400ms -> start running sprint & dirt scuffling sound
     const t1 = window.setTimeout(() => {
       setStage('running');
+      runSoundRef.current = playSound('snooRun', { loop: true });
     }, 450);
 
-    // Step 3: Phase out container
+    // Step 3: Phase out container & stop running scuffle
     const t2 = window.setTimeout(() => {
+      runSoundRef.current?.stop();
       setStage('phasing');
     }, 1450);
 
@@ -127,7 +147,7 @@ export const IntroPanel = ({
       }
     }, 1750);
 
-    timeoutsRef.current = [t1, t2, t3];
+    timeoutsRef.current = [tHit, t1, t2, t3];
   };
 
   return (
@@ -136,7 +156,7 @@ export const IntroPanel = ({
         stage === 'phasing' ? 'phase-fade-out' : ''
       }`}
     >
-      {/* Top Bar with How to Play button (unobtrusive, no top text) */}
+      {/* Top Bar with How to Play button on left & Sound Effects Toggle on right */}
       <div className="w-full flex items-center justify-between shrink-0 mb-1 z-30">
         <button
           type="button"
@@ -147,6 +167,8 @@ export const IntroPanel = ({
           <span className="text-sm">❓</span>
           <span>How to play</span>
         </button>
+
+        <SoundToggleButton />
       </div>
 
       {/* Main Stadium Field Arena: Colors match the outer stadium turf, sky & infield */}
