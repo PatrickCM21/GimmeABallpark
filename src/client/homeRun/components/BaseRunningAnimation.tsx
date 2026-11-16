@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import type { HomeRunMatchupPublic, HomeRunReveal } from '../../../shared/types/homeRun';
 import { playSound, type SoundHandle } from '../sounds';
 import { SnooAvatar } from './SnooAvatar';
-import { SoundToggleButton } from './SoundToggleButton';
 
 type BaseRunningAnimationProps = {
   /** Target base reached: 1 = First base, 2 = Second base, 3 = Third base, 4 = Home plate (Home Run) */
   toBase: number;
   snoovatarUrl?: string | undefined;
+  matchup?: HomeRunMatchupPublic | undefined;
+  reveal?: HomeRunReveal | null | undefined;
   onComplete: () => void;
 };
 
@@ -89,7 +91,7 @@ const HomePlate = ({
 }) => (
   <svg
     viewBox="0 0 30 30"
-    className={`w-9 h-9 sm:w-10 sm:h-10 pointer-events-none transition-transform duration-300 drop-shadow-md ${
+    className={`w-7 h-7 sm:w-8 sm:h-8 pointer-events-none transition-transform duration-300 drop-shadow-md ${
       isTarget && arrived ? 'scale-115' : ''
     }`}
   >
@@ -128,7 +130,7 @@ const DiamondBase = ({
 }) => (
   <svg
     viewBox="0 0 30 30"
-    className={`w-8 h-8 sm:w-9 sm:h-9 pointer-events-none transition-transform duration-300 drop-shadow-md ${
+    className={`w-6 h-6 sm:w-7 sm:h-7 pointer-events-none transition-transform duration-300 drop-shadow-md ${
       isTarget && arrived ? 'scale-115' : ''
     }`}
   >
@@ -183,6 +185,8 @@ const getBaseState = (index: number, toBase: number) => {
 export const BaseRunningAnimation = ({
   toBase,
   snoovatarUrl,
+  matchup,
+  reveal,
   onComplete,
 }: BaseRunningAnimationProps) => {
   const [hasStarted, setHasStarted] = useState(false);
@@ -242,14 +246,51 @@ export const BaseRunningAnimation = ({
         }`}
       aria-label={`Running to ${route.toName}`}
     >
-      {/* Top-right Sound Toggle */}
-      <div className="w-full flex justify-end shrink-0 z-30">
-        <SoundToggleButton />
-      </div>
+      {/* Top Bar: Last Base Answer Comparison */}
+      {matchup && reveal && (
+        <div className="w-full shrink-0 z-30 grid grid-cols-[1fr_auto_1fr] items-stretch gap-1.5 bg-indigo-950/85 backdrop-blur-xs border-2 border-yellow-400/90 rounded-xl p-1.5 sm:p-2 shadow-lg">
+          {(['a', 'b'] as const).map((side, idx) => {
+            const option = matchup[side];
+            const display = side === 'a' ? reveal.displayA : reveal.displayB;
+            const isWinner = reveal.winner === side;
+            return (
+              <Fragment key={side}>
+                {idx === 1 && (
+                  <div className="flex items-center justify-center">
+                    <span className="text-[10px] font-black uppercase text-yellow-300 px-0.5">vs</span>
+                  </div>
+                )}
+                <div
+                  className={`flex flex-col items-center justify-center text-center rounded-lg px-2 py-1 min-w-0 ${
+                    isWinner
+                      ? 'bg-green-500/25 border border-green-400/80'
+                      : 'bg-white/10 border border-white/15 opacity-85'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-1 max-w-full">
+                    <span className="text-sm sm:text-base leading-none shrink-0">{option.emoji}</span>
+                    <span className="text-[11px] sm:text-xs font-black text-white leading-tight line-clamp-2">
+                      {option.label}
+                    </span>
+                  </div>
+                  <span
+                    className={`mt-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-black leading-none ${
+                      isWinner ? 'bg-green-500 text-white' : 'bg-slate-700/90 text-slate-100'
+                    }`}
+                  >
+                    {isWinner ? '👑 ' : ''}
+                    {display}
+                  </span>
+                </div>
+              </Fragment>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Center Field: Scaled-up 4-Base Baseball Diamond */}
+      {/* Center Field: Compact 4-Base Baseball Diamond */}
       <div className="relative w-full flex-1 flex items-center justify-center my-1 min-h-0">
-        <div className="relative w-64 h-64 xs:w-72 xs:h-72 sm:w-80 sm:h-80 aspect-square select-none">
+        <div className="relative w-44 h-44 xs:w-48 xs:h-48 sm:w-56 sm:h-56 aspect-square select-none">
           {/* Complete Vector Diamond with dirt track & baselines */}
           <svg
             viewBox="0 0 100 100"
@@ -316,7 +357,7 @@ export const BaseRunningAnimation = ({
           {/* Destination Base Glowing Beacon */}
           {!arrived && (
             <div
-              className="absolute -translate-x-1/2 -translate-y-1/2 w-11 h-11 rounded-full border-2 border-yellow-300 animate-ping opacity-75 pointer-events-none z-15"
+              className="absolute -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-2 border-yellow-300 animate-ping opacity-75 pointer-events-none z-15"
               style={{ left: `${route.to.x}%`, top: `${route.to.y}%` }}
             />
           )}
@@ -324,7 +365,7 @@ export const BaseRunningAnimation = ({
           {/* Destination Base Arrival Ripple */}
           {arrived && (
             <div
-              className="absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full border-3 border-yellow-400 bg-yellow-300/25 animate-pop-bounce pointer-events-none z-15"
+              className="absolute -translate-x-1/2 -translate-y-1/2 w-9 h-9 rounded-full border-3 border-yellow-400 bg-yellow-300/25 animate-pop-bounce pointer-events-none z-15"
               style={{ left: `${route.to.x}%`, top: `${route.to.y}%` }}
             />
           )}
@@ -421,7 +462,7 @@ export const BaseRunningAnimation = ({
                   : undefined
               }
             >
-              <SnooAvatar src={snoovatarUrl} size={50} className="drop-shadow-lg" />
+              <SnooAvatar src={snoovatarUrl} size={40} className="drop-shadow-lg" />
 
               {/* Dust clouds trailing while running */}
               {hasStarted && !arrived && (

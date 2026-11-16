@@ -149,6 +149,8 @@ export const UsernameDisplay = ({
   );
 };
 
+const LEADERBOARD_PAGE_SIZE = 5;
+
 export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   isOpen,
   onClose,
@@ -230,7 +232,9 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
         const validPage =
           'page' in json && typeof json.page === 'number' ? json.page : targetPage;
         const validPageSize =
-          'pageSize' in json && typeof json.pageSize === 'number' ? json.pageSize : 10;
+          'pageSize' in json && typeof json.pageSize === 'number'
+            ? json.pageSize
+            : LEADERBOARD_PAGE_SIZE;
         const validTotalEntries =
           'totalEntries' in json && typeof json.totalEntries === 'number'
             ? json.totalEntries
@@ -259,7 +263,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     if (!isOpen) return;
     let active = true;
 
-    fetch(`/api/leaderboard?period=${period}&page=${page}&pageSize=10`)
+    fetch(`/api/leaderboard?period=${period}&page=${page}&pageSize=${LEADERBOARD_PAGE_SIZE}`)
       .then(async (res) => {
         if (!res.ok) {
           throw new Error('Failed to load leaderboard');
@@ -327,7 +331,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
     ) {
       return;
     }
-    const pageSize = data?.pageSize || 10;
+    const pageSize = data?.pageSize || LEADERBOARD_PAGE_SIZE;
     const userPage = Math.max(
       1,
       Math.min(data?.totalPages || 1, Math.ceil(currentUserEntry.rank / pageSize))
@@ -434,40 +438,43 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
 
         {/* Pinned Current User Card ("YOU") */}
         {currentUserEntry && (
-          <div className="leaderboard-pinned-card">
-            <div className="leaderboard-rank-number">
-              #{currentUserEntry.rank.toLocaleString()}
-            </div>
-            <div className="leaderboard-avatar-wrapper">
-              <LeaderboardAvatar
-                username={currentUserEntry.username}
-                snoovatarUrl={currentUserEntry.snoovatarUrl || snoovatarUrl}
-                size={38}
-              />
-            </div>
-            <div className="leaderboard-user-details">
-              <div className="leaderboard-username-row">
-                <UsernameDisplay
+          <>
+            <div className="leaderboard-pinned-card">
+              <div className="leaderboard-rank-number">
+                #{currentUserEntry.rank.toLocaleString()}
+              </div>
+              <div className="leaderboard-avatar-wrapper">
+                <LeaderboardAvatar
                   username={currentUserEntry.username}
-                  rowId="pinned"
-                  expandedId={expandedRowId}
-                  onToggle={handleToggleUsername}
+                  snoovatarUrl={currentUserEntry.snoovatarUrl || snoovatarUrl}
+                  size={34}
                 />
-                <span className="leaderboard-you-badge">YOU</span>
+              </div>
+              <div className="leaderboard-user-details">
+                <div className="leaderboard-username-row">
+                  <UsernameDisplay
+                    username={currentUserEntry.username}
+                    rowId="pinned"
+                    expandedId={expandedRowId}
+                    onToggle={handleToggleUsername}
+                  />
+                  <span className="leaderboard-you-badge">YOU</span>
+                </div>
+              </div>
+              <div className="leaderboard-score-badge">
+                <span className="score-coin-icon">
+                  <BaseBagIcon size={20} />
+                </span>
+                <span className="score-number">
+                  {currentUserEntry.score.toLocaleString()}
+                </span>
+                <span className="score-label">
+                  {currentUserEntry.score === 1 ? 'Base' : 'Bases'}
+                </span>
               </div>
             </div>
-            <div className="leaderboard-score-badge">
-              <span className="score-coin-icon">
-                <BaseBagIcon size={20} />
-              </span>
-              <span className="score-number">
-                {currentUserEntry.score.toLocaleString()}
-              </span>
-              <span className="score-label">
-                {currentUserEntry.score === 1 ? 'Base' : 'Bases'}
-              </span>
-            </div>
-          </div>
+            <div className="leaderboard-pinned-divider" role="separator" />
+          </>
         )}
 
         {/* Main List Section */}
@@ -533,7 +540,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                         snoovatarUrl={
                           entry.snoovatarUrl || (isCurrentUser ? snoovatarUrl : undefined)
                         }
-                        size={36}
+                        size={32}
                       />
                     </div>
 

@@ -1,6 +1,7 @@
 import type {
   HomeRunAnswerRequest,
   HomeRunAnswerResponse,
+  HomeRunExtrasResponse,
   HomeRunGameState,
   HomeRunPracticeAnswerResponse,
   HomeRunStartResponse,
@@ -27,13 +28,14 @@ const postJson = <T>(path: string, body?: unknown): Promise<T> =>
 
 export const homeRunApi = {
   getState: () => requestJson<HomeRunGameState>('/api/home-run/state'),
+  getExtras: () => requestJson<HomeRunExtrasResponse>('/api/home-run/extras'),
   start: () => postJson<HomeRunStartResponse>('/api/home-run/start'),
   answer: (request: HomeRunAnswerRequest) => postJson<HomeRunAnswerResponse>('/api/home-run/answer', request),
   practiceAnswer: (request: HomeRunAnswerRequest) =>
     postJson<HomeRunPracticeAnswerResponse>('/api/home-run/practice-answer', request),
   reset: () => postJson<{ success: boolean }>('/api/home-run/reset'),
   getUserStats: () => requestJson<UserStatsResponse>('/api/user-stats'),
-  getLeaderboard: (period: LeaderboardPeriod, page: number = 1, pageSize: number = 10) =>
+  getLeaderboard: (period: LeaderboardPeriod, page: number = 1, pageSize: number = 5) =>
     requestJson<LeaderboardResponse>(
       `/api/leaderboard?period=${period}&page=${page}&pageSize=${pageSize}`
     ),

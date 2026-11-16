@@ -18,6 +18,7 @@ import type {
   HomeRunAnswerRequest,
   HomeRunAnswerResponse,
   HomeRunErrorResponse,
+  HomeRunExtrasResponse,
   HomeRunGameState,
   HomeRunLadder,
   HomeRunPracticeAnswerResponse,
@@ -41,6 +42,8 @@ import {
   clearHomeRunRecorded,
 } from '../core/userStatsStore';
 import { getLeaderboard } from '../core/leaderboard';
+import { syncUserBaseFlair } from '../core/flair';
+import { calculateTotalBases } from '../../shared/types/stats';
 import type { UserLifetimeStats } from '../../shared/types/stats';
 import type { LeaderboardPeriod, LeaderboardResponse } from '../../shared/types/leaderboard';
 
@@ -74,27 +77,27 @@ const settleExpiredRound = async (
   return settled;
 };
 
-type PlayerContext = {
+export type HomeRunPlayerContext = {
   postId: string;
   username: string;
   ladder: HomeRunLadder;
   puzzleNumber: number;
 };
 
-const getPlayerContext = async (): Promise<PlayerContext | HomeRunErrorResponse> => {
+export const getHomeRunPlayerContext = async (): Promise<HomeRunPlayerContext | HomeRunErrorResponse> => {
   const { postId } = context;
   if (!postId) return { error: 'postId missing' };
 
-  const username = await reddit.getCurrentUsername();
+  const [username, found] = await Promise.all([reddit.getCurrentUsername(), getLadderForPost(postId)]);
   if (!username) return { error: 'Log in to play Home Run' };
-
-  const found = await getLadderForPost(postId);
   if (!found) return { error: 'This post has no Home Run ladder configured' };
 
   return { postId, username, ...found };
 };
 
-const isError = (value: PlayerContext | HomeRunErrorResponse): value is HomeRunErrorResponse => 'error' in value;
+export const isHomeRunContextError = (
+  value: HomeRunPlayerContext | HomeRunErrorResponse
+): value is HomeRunErrorResponse => 'error' in value;
 
 const isValidAnswerRequest = (value: unknown): value is HomeRunAnswerRequest => {
   if (typeof value !== 'object' || value === null) return false;
@@ -102,65 +105,123 @@ const isValidAnswerRequest = (value: unknown): value is HomeRunAnswerRequest => 
   return 'pick' in value && (value.pick === 'a' || value.pick === 'b' || value.pick === null);
 };
 
-homeRun.get('/state', async (c) => {
+const fetchSnoovatarSafe = async (username: string): Promise<string | undefined> => {
   try {
-    const player = await getPlayerContext();
-    if (isError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+    return await reddit.getSnoovatarUrl(username);
+  } catch (e) {
+    console.warn('Could not load snoovatar:', e);
+    return undefined;
+  }
+};
 
-    const now = Date.now();
-    const progress = await settleExpiredRound(
-      player.postId,
-      player.username,
-      await loadProgress(player.postId, player.username),
-      now
-    );
+/**
+ * Builds the initial Home Run state.
+ * For active/new runs, defers snoovatar, audience, round stats, and lifetime stats
+ * to /api/home-run/extras so the player can enter the game immediately.
+ */
+export const buildHomeRunInitialState = async (player: HomeRunPlayerContext): Promise<HomeRunGameState> => {
+  const now = Date.now();
+  const progress = await settleExpiredRound(
+    player.postId,
+    player.username,
+    await loadProgress(player.postId, player.username),
+    now
+  );
 
-    let snoovatarUrl: string | undefined;
-    try {
-      snoovatarUrl = await reddit.getSnoovatarUrl(player.username);
-    } catch (e) {
-      console.warn('Could not load snoovatar:', e);
-    }
-
-    // If player has participated (or is active), ensure they are in the stadium audience
-    if (progress.outcomes.length > 0) {
-      void addAudienceMember(player.postId, player.username, snoovatarUrl);
-    }
-
-    const audience = await loadAudience(player.postId);
-
-    if (isRunFinished(progress.outcomes)) {
-      try {
-        await recordHomeRunStats(player.postId, player.username, countBases(progress.outcomes), snoovatarUrl);
-      } catch (err) {
-        console.warn('Could not record Home Run lifetime stats in /state:', err);
-      }
-    }
-    const lifetimeStats = await loadUserStats(player.username);
-
-    return c.json<HomeRunGameState>({
+  if (!isRunFinished(progress.outcomes)) {
+    return {
       ladderTitle: player.ladder.title,
       puzzleNumber: player.puzzleNumber,
       rounds: toPublicMatchups(player.ladder),
       progress: toPublicProgress(progress, now),
-      stats: await loadRoundStats(player.postId),
+      stats: [],
       timeLimitMs: HOME_RUN_TIME_LIMIT_MS,
       username: player.username,
-      snoovatarUrl,
-      audience,
       canReset: isDevSubreddit(),
-      lifetimeStats,
-    });
+    };
+  }
+
+  const [snoovatarUrl, audience, stats] = await Promise.all([
+    fetchSnoovatarSafe(player.username),
+    loadAudience(player.postId),
+    loadRoundStats(player.postId),
+  ]);
+
+  if (progress.outcomes.length > 0) {
+    void addAudienceMember(player.postId, player.username, snoovatarUrl);
+  }
+
+  try {
+    await recordHomeRunStats(player.postId, player.username, countBases(progress.outcomes), snoovatarUrl);
+  } catch (err) {
+    console.warn('Could not record Home Run lifetime stats in /state:', err);
+  }
+  const lifetimeStats = await loadUserStats(player.username);
+  void syncUserBaseFlair(player.username, calculateTotalBases(lifetimeStats));
+
+  return {
+    ladderTitle: player.ladder.title,
+    puzzleNumber: player.puzzleNumber,
+    rounds: toPublicMatchups(player.ladder),
+    reveals: player.ladder.rounds.map(buildReveal),
+    progress: toPublicProgress(progress, now),
+    stats,
+    timeLimitMs: HOME_RUN_TIME_LIMIT_MS,
+    username: player.username,
+    snoovatarUrl,
+    audience,
+    canReset: isDevSubreddit(),
+    lifetimeStats,
+  };
+};
+
+homeRun.get('/state', async (c) => {
+  try {
+    const player = await getHomeRunPlayerContext();
+    if (isHomeRunContextError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+
+    return c.json<HomeRunGameState>(await buildHomeRunInitialState(player));
   } catch (error: unknown) {
     console.error('API /home-run/state Error:', error);
     return c.json<HomeRunErrorResponse>({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
   }
 });
 
+/** Fetches non-blocking extras (snoovatar, stadium audience, round stats, lifetime stats) asynchronously. */
+homeRun.get('/extras', async (c) => {
+  try {
+    const player = await getHomeRunPlayerContext();
+    if (isHomeRunContextError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+
+    const [snoovatarUrl, audience, stats, lifetimeStats, progress] = await Promise.all([
+      fetchSnoovatarSafe(player.username),
+      loadAudience(player.postId),
+      loadRoundStats(player.postId),
+      loadUserStats(player.username),
+      loadProgress(player.postId, player.username),
+    ]);
+
+    if (progress.outcomes.length > 0) {
+      void addAudienceMember(player.postId, player.username, snoovatarUrl);
+    }
+    void syncUserBaseFlair(player.username, calculateTotalBases(lifetimeStats));
+
+    return c.json<HomeRunExtrasResponse>({
+      snoovatarUrl,
+      audience,
+      stats,
+      lifetimeStats,
+    });
+  } catch (error: unknown) {
+    console.error('API /home-run/extras Error:', error);
+    return c.json<HomeRunErrorResponse>({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+  }
+});
+
 homeRun.post('/start', async (c) => {
   try {
-    const player = await getPlayerContext();
-    if (isError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+    const player = await getHomeRunPlayerContext();
+    if (isHomeRunContextError(player)) return c.json<HomeRunErrorResponse>(player, 400);
 
     const now = Date.now();
     const current = await settleExpiredRound(
@@ -196,8 +257,8 @@ homeRun.post('/start', async (c) => {
 
 homeRun.post('/answer', async (c) => {
   try {
-    const player = await getPlayerContext();
-    if (isError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+    const player = await getHomeRunPlayerContext();
+    if (isHomeRunContextError(player)) return c.json<HomeRunErrorResponse>(player, 400);
 
     const body: unknown = await c.req.json();
     if (!isValidAnswerRequest(body)) return c.json<HomeRunErrorResponse>({ error: 'Invalid answer' }, 400);
@@ -236,7 +297,8 @@ homeRun.post('/answer', async (c) => {
     })();
 
     let lifetimeStats: UserLifetimeStats | undefined;
-    if (isRunFinished(next.outcomes)) {
+    const finished = isRunFinished(next.outcomes);
+    if (finished) {
       try {
         lifetimeStats = await recordHomeRunStats(player.postId, player.username, countBases(next.outcomes));
       } catch (err) {
@@ -247,6 +309,7 @@ homeRun.post('/answer', async (c) => {
     return c.json<HomeRunAnswerResponse>({
       outcome,
       reveal: buildReveal(matchup),
+      reveals: finished ? player.ladder.rounds.map(buildReveal) : undefined,
       progress: toPublicProgress(next, now),
       stats: await loadRoundStats(player.postId),
       lifetimeStats,
@@ -260,8 +323,8 @@ homeRun.post('/answer', async (c) => {
 /** Practice replay after finishing the official run: grades picks without saving progress or stats. */
 homeRun.post('/practice-answer', async (c) => {
   try {
-    const player = await getPlayerContext();
-    if (isError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+    const player = await getHomeRunPlayerContext();
+    if (isHomeRunContextError(player)) return c.json<HomeRunErrorResponse>(player, 400);
 
     const body: unknown = await c.req.json();
     if (!isValidAnswerRequest(body)) return c.json<HomeRunErrorResponse>({ error: 'Invalid answer' }, 400);
@@ -296,8 +359,8 @@ homeRun.post('/practice-answer', async (c) => {
 /** Dev subreddits only: lets testers replay the daily ladder. */
 homeRun.post('/reset', async (c) => {
   if (!isDevSubreddit()) return c.json<HomeRunErrorResponse>({ error: 'Not available' }, 403);
-  const player = await getPlayerContext();
-  if (isError(player)) return c.json<HomeRunErrorResponse>(player, 400);
+  const player = await getHomeRunPlayerContext();
+  if (isHomeRunContextError(player)) return c.json<HomeRunErrorResponse>(player, 400);
   await clearProgress(player.postId, player.username);
   await clearHomeRunRecorded(player.postId, player.username);
   return c.json({ success: true });

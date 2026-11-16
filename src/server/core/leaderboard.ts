@@ -6,6 +6,7 @@ import type {
   LeaderboardResponse,
 } from '../../shared/types/leaderboard';
 import { loadUserStats } from './userStatsStore';
+import { syncUserBaseFlair } from './flair';
 
 export function getCurrentWeekKey(date: Date = new Date()): string {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -94,6 +95,7 @@ export async function syncUserLeaderboard(
     redis.hSet('homerun:users', { [username]: '1' }),
     redis.zAdd('homerun:leaderboard:all_time', { member: username, score: lifetimeBases }),
     redis.zAdd(`homerun:leaderboard:weekly:${weekKey}`, { member: username, score: weeklyBases }),
+    syncUserBaseFlair(username, lifetimeBases),
   ];
 
   let snoovatarToSave = snoovatarUrl;

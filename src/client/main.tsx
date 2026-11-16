@@ -1,6 +1,6 @@
 import './index.css';
 import { THEME } from './theme';
-import { StrictMode, useEffect, useState, useRef, type ChangeEvent, type PointerEvent } from 'react';
+import { StrictMode, Suspense, lazy, useEffect, useState, useRef, type ChangeEvent, type PointerEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import { navigateTo } from '@devvit/web/client';
 import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse, Config } from '../shared/api';
@@ -64,16 +64,23 @@ const postComment = async (text: string) => {
   return res.json();
 };
 
-import { CropModal } from './components/CropModal';
-import { FactModal } from './components/FactModal';
-import { CreatorWarningModal } from './components/CreatorWarningModal';
-import { CommentModal } from './components/CommentModal';
-import { LifetimeStatsModal } from './components/LifetimeStatsModal';
 import { ErrorState } from './components/ErrorState';
 import { LoadingState } from './components/LoadingState';
-import { CreatorView } from './components/CreatorView';
-import { GameView } from './components/GameView';
-import { HomeRunMode } from './homeRun/components/HomeRunMode';
+
+const CropModal = lazy(() => import('./components/CropModal').then((m) => ({ default: m.CropModal })));
+const FactModal = lazy(() => import('./components/FactModal').then((m) => ({ default: m.FactModal })));
+const CreatorWarningModal = lazy(() =>
+  import('./components/CreatorWarningModal').then((m) => ({ default: m.CreatorWarningModal }))
+);
+const CommentModal = lazy(() => import('./components/CommentModal').then((m) => ({ default: m.CommentModal })));
+const LifetimeStatsModal = lazy(() =>
+  import('./components/LifetimeStatsModal').then((m) => ({ default: m.LifetimeStatsModal }))
+);
+const CreatorView = lazy(() => import('./components/CreatorView').then((m) => ({ default: m.CreatorView })));
+const GameView = lazy(() => import('./components/GameView').then((m) => ({ default: m.GameView })));
+const HomeRunMode = lazy(() =>
+  import('./homeRun/components/HomeRunMode').then((m) => ({ default: m.HomeRunMode }))
+);
 
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
@@ -630,7 +637,11 @@ export const App = () => {
 
   // --- 2b. HOME RUN MODE (its own self-contained experience) ---
   if (data.mode === 'homerun') {
-    return <HomeRunMode />;
+    return (
+      <Suspense fallback={<LoadingState />}>
+        <HomeRunMode initialState={data.homeRunState} />
+      </Suspense>
+    );
   }
 
   const isCreatorMode = Boolean(data.isHub || showCreator);
@@ -800,9 +811,10 @@ export const App = () => {
   }
 
   return (
-    <div
-      className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative"
-    >
+    <Suspense fallback={<LoadingState />}>
+      <div
+        className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative"
+      >
       {/* Toast banner */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
@@ -947,16 +959,17 @@ export const App = () => {
     userScoreText={userScoreText}
   />
 
-  <LifetimeStatsModal
-    show={showStatsModal}
-    onClose={() => setShowStatsModal(false)}
-    stats={data.lifetimeStats}
-    username={data.username}
-    snoovatarUrl={undefined}
-    initialTab="ballpark"
-  />
-</div>
-);
+      <LifetimeStatsModal
+        show={showStatsModal}
+        onClose={() => setShowStatsModal(false)}
+        stats={data.lifetimeStats}
+        username={data.username}
+        snoovatarUrl={undefined}
+        initialTab="ballpark"
+      />
+    </div>
+    </Suspense>
+  );
 };
 
 createRoot(document.getElementById('root')!).render(

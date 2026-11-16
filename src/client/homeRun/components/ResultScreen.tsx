@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { HOME_RUN_ROUND_COUNT, countBases, isHomeRun } from '../../../shared/homeRun/engine';
-import type { HomeRunMatchupPublic, HomeRunOutcome, HomeRunRoundStat } from '../../../shared/types/homeRun';
+import type { HomeRunMatchupPublic, HomeRunOutcome, HomeRunReveal, HomeRunRoundStat } from '../../../shared/types/homeRun';
 import type { UserLifetimeStats } from '../../../shared/types/stats';
 import { BASE_LABELS } from '../constants';
 import { BaseDiamond } from './BaseDiamond';
@@ -8,7 +8,10 @@ import { OutcomeBadge } from './OutcomeBadge';
 import { RoundPips } from './RoundPips';
 import { SoundToggleButton } from './SoundToggleButton';
 import { LeaderboardModal, TrophyIcon } from './LeaderboardModal';
-import { LifetimeStatsModal } from '../../components/LifetimeStatsModal';
+
+const LifetimeStatsModal = lazy(() =>
+  import('../../components/LifetimeStatsModal').then((m) => ({ default: m.LifetimeStatsModal }))
+);
 
 const StatsIcon = ({ size = 15, className = '' }: { size?: number; className?: string }) => (
   <svg
@@ -34,6 +37,7 @@ const StatsIcon = ({ size = 15, className = '' }: { size?: number; className?: s
 type ResultScreenProps = {
   outcomes: readonly HomeRunOutcome[];
   rounds: readonly HomeRunMatchupPublic[];
+  reveals?: readonly HomeRunReveal[] | undefined;
   stats: readonly HomeRunRoundStat[];
   snoovatarUrl?: string | undefined;
   username?: string | undefined;
@@ -66,6 +70,7 @@ const passRate = ({ attempts, passes }: HomeRunRoundStat): number =>
 export const ResultScreen = ({
   outcomes,
   rounds,
+  reveals,
   stats,
   snoovatarUrl,
   username,
@@ -83,6 +88,7 @@ export const ResultScreen = ({
   const [selectedRound, setSelectedRound] = useState<number>(initialRound);
 
   const inspectedMatchup = rounds[selectedRound];
+  const inspectedReveal = reveals?.[selectedRound];
   const inspectedStat = stats[selectedRound] ?? { attempts: 0, passes: 0 };
   const inspectedOutcome = outcomes[selectedRound];
   const inspectedRate = passRate(inspectedStat);
@@ -127,7 +133,7 @@ export const ResultScreen = ({
       {/* Header with title, subtitle, and Try Again button underneath */}
       <div className="w-full flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
         <h2
-          className={`w-full px-[88px] sm:px-28 text-lg sm:text-2xl font-black uppercase leading-tight text-center ${headline.tone}`}
+          className={`w-full pl-11 pr-24 sm:px-24 text-[clamp(0.75rem,3.4vw,1.375rem)] sm:text-[22px] font-black uppercase leading-tight text-center whitespace-nowrap ${headline.tone}`}
         >
           {headline.title}
         </h2>
@@ -181,7 +187,7 @@ export const ResultScreen = ({
           selectedRound={selectedRound}
           onSelectRound={handleSelectRound}
         />
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
           Tap a base or number to inspect question
         </span>
       </div>
@@ -202,11 +208,37 @@ export const ResultScreen = ({
               </div>
             </div>
 
-            <p className="text-xs font-black text-slate-800 leading-snug">
-              {inspectedMatchup.a.emoji} {inspectedMatchup.a.label}
-              <span className="text-slate-400 font-bold mx-1">vs</span>
-              {inspectedMatchup.b.emoji} {inspectedMatchup.b.label}
-            </p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <div className="min-w-0 text-center">
+                <p className="text-xs font-black text-slate-800 leading-snug">
+                  {inspectedMatchup.a.emoji} {inspectedMatchup.a.label}
+                </p>
+                {inspectedReveal && (
+                  <p
+                    className={`mt-0.5 text-xs font-black leading-tight ${
+                      inspectedReveal.winner === 'a' ? 'text-green-700' : 'text-slate-600'
+                    }`}
+                  >
+                    {inspectedReveal.displayA}
+                  </p>
+                )}
+              </div>
+              <span className="text-slate-400 font-bold text-xs">vs</span>
+              <div className="min-w-0 text-center">
+                <p className="text-xs font-black text-slate-800 leading-snug">
+                  {inspectedMatchup.b.emoji} {inspectedMatchup.b.label}
+                </p>
+                {inspectedReveal && (
+                  <p
+                    className={`mt-0.5 text-xs font-black leading-tight ${
+                      inspectedReveal.winner === 'b' ? 'text-green-700' : 'text-slate-600'
+                    }`}
+                  >
+                    {inspectedReveal.displayB}
+                  </p>
+                )}
+              </div>
+            </div>
 
             <div className="mt-1.5 h-2.5 rounded-full bg-white border border-amber-300 overflow-hidden">
               <div
@@ -229,13 +261,17 @@ export const ResultScreen = ({
         )}
       </div>
 
-      <LifetimeStatsModal
-        show={showStatsModal}
-        onClose={() => setShowStatsModal(false)}
-        stats={lifetimeStats}
-        username={username}
-        snoovatarUrl={snoovatarUrl}
-      />
+      {showStatsModal && (
+        <Suspense fallback={null}>
+          <LifetimeStatsModal
+            show={showStatsModal}
+            onClose={() => setShowStatsModal(false)}
+            stats={lifetimeStats}
+            username={username}
+            snoovatarUrl={snoovatarUrl}
+          />
+        </Suspense>
+      )}
 
       <LeaderboardModal
         isOpen={showLeaderboardModal}

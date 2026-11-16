@@ -124,6 +124,8 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
           <BaseRunningAnimation
             toBase={runningToBase}
             snoovatarUrl={state.snoovatarUrl}
+            matchup={matchup}
+            reveal={game.reveal}
             onComplete={completeBaseRun}
           />
         )}
@@ -132,6 +134,7 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
           <ResultScreen
             outcomes={outcomes}
             rounds={state.rounds}
+            reveals={game.reveals}
             stats={game.stats}
             snoovatarUrl={state.snoovatarUrl}
             username={state.username}

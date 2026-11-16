@@ -7,14 +7,19 @@ import { HomeRunGame } from './HomeRunGame';
 
 const toMessage = (e: unknown, fallback: string): string => (e instanceof Error ? e.message : fallback);
 
-/** Entry point for Home Run posts: loads the player's state, then hands over to the game. */
-export const HomeRunMode = () => {
-  const [state, setState] = useState<HomeRunGameState | null>(null);
+type HomeRunModeProps = {
+  initialState?: HomeRunGameState | undefined;
+};
+
+/** Entry point for Home Run posts: renders immediately when initialState is provided, then loads extras asynchronously. */
+export const HomeRunMode = ({ initialState }: HomeRunModeProps) => {
+  const [state, setState] = useState<HomeRunGameState | null>(initialState ?? null);
   const [error, setError] = useState<string | null>(null);
   /** Bumping this refetches state (used for retry and dev reset). */
   const [loadId, setLoadId] = useState(0);
 
   useEffect(() => {
+    if (loadId === 0 && initialState) return;
     let cancelled = false;
     homeRunApi
       .getState()
@@ -27,7 +32,36 @@ export const HomeRunMode = () => {
     return () => {
       cancelled = true;
     };
-  }, [loadId]);
+  }, [loadId, initialState]);
+
+  // Fetch non-blocking extras (snoovatar, stadium audience, stats) in the background while the user starts playing.
+  const needsExtras = Boolean(state && state.audience === undefined);
+  useEffect(() => {
+    if (!needsExtras) return;
+    let cancelled = false;
+    homeRunApi
+      .getExtras()
+      .then((extras) => {
+        if (cancelled) return;
+        setState((prev) =>
+          prev
+            ? {
+                ...prev,
+                snoovatarUrl: prev.snoovatarUrl ?? extras.snoovatarUrl,
+                audience: prev.audience ?? extras.audience ?? [],
+                stats: prev.stats.length > 0 ? prev.stats : extras.stats,
+                lifetimeStats: prev.lifetimeStats ?? extras.lifetimeStats,
+              }
+            : prev
+        );
+      })
+      .catch(() => {
+        // Non-critical: gameplay works fine without extras
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [needsExtras]);
 
   const reload = useCallback(() => {
     setError(null);

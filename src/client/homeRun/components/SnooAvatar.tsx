@@ -40,6 +40,7 @@ export const SnooAvatar = ({
         width={size}
         height={size}
         draggable={false}
+        decoding="async"
         onError={() => setFailed(true)}
         style={{ width: size, height: size }}
         className={`select-none pointer-events-none w-full h-full ${

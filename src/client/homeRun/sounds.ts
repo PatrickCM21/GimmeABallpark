@@ -100,9 +100,28 @@ const htmlAudioCache = new Map<InternalSoundKey, HTMLAudioElement>();
 const activeStops = new Set<() => void>();
 const muteListeners = new Set<(muted: boolean) => void>();
 let preloadStarted = false;
+let deferredPreloadStarted = false;
 let lastWowIndex = -1;
 let lastAwhIndex = -1;
 let activeMusicHandle: SoundHandle | null = null;
+
+const INTRO_SOUND_KEYS: readonly InternalSoundKey[] = ['throw', 'batHit'];
+const GAMEPLAY_SOUND_KEYS: readonly InternalSoundKey[] = [
+  'gameMusic',
+  'snooRun',
+  'glassSmash',
+  'wallHit',
+  'falling',
+  'thump',
+  'crowdWow1',
+  'crowdAwh1',
+  'crowdWow2',
+  'crowdWow3',
+  'crowdWow4',
+  'crowdAwh2',
+  'crowdAwh3',
+  'gameWin',
+];
 
 let isMutedState: boolean = (() => {
   if (typeof window === 'undefined') return false;
@@ -194,27 +213,47 @@ const loadBuffer = (key: InternalSoundKey): Promise<AudioBuffer | null> => {
   return promise;
 };
 
-/** Preloads all game sound effects into memory so playback is instantaneous. */
+const preloadKey = (key: InternalSoundKey): void => {
+  if (getAudioContext()) {
+    void loadBuffer(key);
+    return;
+  }
+  if (htmlAudioCache.has(key)) return;
+  try {
+    const audio = new Audio(SOUND_URLS[key]);
+    audio.preload = 'auto';
+    audio.load();
+    htmlAudioCache.set(key, audio);
+  } catch {
+    // Ignore HTMLAudio preload errors in restricted environments
+  }
+};
+
+const preloadGameplaySounds = (): void => {
+  if (typeof window === 'undefined' || isMutedState || deferredPreloadStarted) return;
+  deferredPreloadStarted = true;
+  GAMEPLAY_SOUND_KEYS.forEach(preloadKey);
+};
+
+/** Preloads intro sound effects immediately and defers gameplay/crowd audio asynchronously. */
 export const preloadSounds = (): void => {
-  if (typeof window === 'undefined' || preloadStarted) return;
+  if (typeof window === 'undefined' || isMutedState || preloadStarted) return;
   preloadStarted = true;
 
-  (Object.keys(SOUND_URLS) as InternalSoundKey[]).forEach((key) => {
-    try {
-      const audio = new Audio(SOUND_URLS[key]);
-      audio.preload = 'auto';
-      audio.load();
-      htmlAudioCache.set(key, audio);
-    } catch {
-      // Ignore HTMLAudio preload errors in restricted environments
-    }
-    void loadBuffer(key);
-  });
+  INTRO_SOUND_KEYS.forEach(preloadKey);
+
+  const scheduleDeferred =
+    typeof window.requestIdleCallback === 'function'
+      ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 600 })
+      : (cb: () => void) => window.setTimeout(cb, 300);
+
+  scheduleDeferred(preloadGameplaySounds);
 };
 
 /** Resumes the Web Audio context on user gesture so sounds are never blocked. */
 export const unlockAudio = (): void => {
   preloadSounds();
+  preloadGameplaySounds();
   const ctx = getAudioContext();
   if (ctx && ctx.state === 'suspended') {
     void ctx.resume().catch(() => {});

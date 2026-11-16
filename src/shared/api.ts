@@ -1,4 +1,5 @@
 import type { UserLifetimeStats } from './types/stats';
+import type { HomeRunGameState } from './types/homeRun';
 
 export type Config = {
   type: 'percentage' | 'cost' | 'count';
@@ -30,6 +31,8 @@ export type GameDataResponse = {
     samples: number[];
   };
   lifetimeStats?: UserLifetimeStats;
+  /** Included directly for Home Run posts to avoid a second round-trip. */
+  homeRunState?: HomeRunGameState;
 };
 
 export type CreateGameRequest = Config;
@@ -54,4 +57,6 @@ export type GuessResponse = {
   };
   closerThanMajority?: boolean;
   lifetimeStats?: UserLifetimeStats;
+  /** Included directly for Home Run posts to avoid a second round-trip. */
+  homeRunState?: HomeRunGameState;
 };

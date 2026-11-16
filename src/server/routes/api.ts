@@ -11,6 +11,11 @@ import type {
 
 import { parseHomeRunPostData } from '../../shared/homeRun/engine';
 import { homeRunKeys } from '../core/homeRunStore';
+import {
+  buildHomeRunInitialState,
+  getHomeRunPlayerContext,
+  isHomeRunContextError,
+} from './homeRun';
 import { isDevSubreddit } from '../core/subreddit';
 import {
   loadUserStats,
@@ -18,8 +23,9 @@ import {
   clearNormalBallparkRecorded,
 } from '../core/userStatsStore';
 import { getLeaderboard } from '../core/leaderboard';
+import { syncUserBaseFlair } from '../core/flair';
 import type { UserStatsResponse } from '../../shared/types/stats';
-import { createEmptyUserStats } from '../../shared/types/stats';
+import { calculateTotalBases, createEmptyUserStats } from '../../shared/types/stats';
 import type { LeaderboardPeriod, LeaderboardResponse } from '../../shared/types/leaderboard';
 
 export const api = new Hono();
@@ -32,8 +38,18 @@ api.get('/game-data', async (c) => {
       return c.json({ error: 'postId missing' }, 400);
     }
 
-    // Home Run posts are served by /api/home-run; just tell the client which mode to render.
+    // Home Run posts: include initial state directly to avoid a second round-trip.
     if (parseHomeRunPostData(context.postData) || (await redis.get(homeRunKeys.ladder(postId)))) {
+      const player = await getHomeRunPlayerContext();
+      if (!isHomeRunContextError(player)) {
+        const homeRunState = await buildHomeRunInitialState(player);
+        return c.json<GameDataResponse>({
+          mode: 'homerun',
+          isHub: false,
+          configured: true,
+          homeRunState,
+        });
+      }
       return c.json<GameDataResponse>({ mode: 'homerun', isHub: false, configured: true });
     }
 
@@ -132,6 +148,9 @@ api.get('/game-data', async (c) => {
     const devSubreddit = isDevSubreddit(context.subredditName);
 
     const lifetimeStats = username ? await loadUserStats(username) : undefined;
+    if (username && lifetimeStats) {
+      void syncUserBaseFlair(username, calculateTotalBases(lifetimeStats));
+    }
 
     return c.json<GameDataResponse>({
       isHub,
@@ -427,6 +446,7 @@ api.get('/user-stats', async (c) => {
     }
 
     const stats = await loadUserStats(username);
+    void syncUserBaseFlair(username, calculateTotalBases(stats));
     return c.json<UserStatsResponse>({
       username,
       stats,

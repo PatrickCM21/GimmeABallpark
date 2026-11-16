@@ -108,6 +108,8 @@ export const FullBodySnoo = ({
             alt={player ? `u/${player.username}` : 'Player Snoovatar'}
             className="w-full h-full object-contain object-bottom drop-shadow-[0_4px_8px_rgba(0,0,0,0.5)] select-none pointer-events-none"
             draggable={false}
+            loading="lazy"
+            decoding="async"
             onError={() => setImgFailed(true)}
           />
         ) : (

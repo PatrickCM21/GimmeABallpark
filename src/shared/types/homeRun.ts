@@ -81,6 +81,8 @@ export type HomeRunGameState = {
   ladderTitle: string;
   puzzleNumber: number;
   rounds: HomeRunMatchupPublic[];
+  /** Revealed answers for all rounds, present only once the run is finished. */
+  reveals?: HomeRunReveal[] | undefined;
   progress: HomeRunProgress;
   stats: HomeRunRoundStat[];
   timeLimitMs: number;
@@ -88,6 +90,13 @@ export type HomeRunGameState = {
   snoovatarUrl?: string | undefined;
   audience?: HomeRunAudienceMember[] | undefined;
   canReset: boolean;
+  lifetimeStats?: UserLifetimeStats | undefined;
+};
+
+export type HomeRunExtrasResponse = {
+  snoovatarUrl?: string | undefined;
+  audience?: HomeRunAudienceMember[] | undefined;
+  stats: HomeRunRoundStat[];
   lifetimeStats?: UserLifetimeStats | undefined;
 };
 
@@ -110,6 +119,8 @@ export type HomeRunReveal = {
 export type HomeRunAnswerResponse = {
   outcome: HomeRunOutcome;
   reveal: HomeRunReveal;
+  /** Revealed answers for all rounds, present when this answer finishes the run. */
+  reveals?: HomeRunReveal[] | undefined;
   progress: HomeRunProgress;
   stats: HomeRunRoundStat[];
   lifetimeStats?: UserLifetimeStats | undefined;

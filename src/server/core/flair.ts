@@ -1,4 +1,12 @@
-import { reddit } from '@devvit/web/server';
+import { context, reddit, redis } from '@devvit/web/server';
+import {
+  BASE_SCORE_TIERS,
+  formatBaseScoreFlairText,
+  getBaseScoreTier,
+  isFlairEligibleUsername,
+} from './flairFormat';
+
+export { BASE_SCORE_TIERS, formatBaseScoreFlairText, getBaseScoreTier, isFlairEligibleUsername };
 
 export type FlairSpec = {
   text: string;
@@ -59,5 +67,47 @@ export const applyFlair = async (
     }
   } catch (err) {
     console.warn(`Fallback flair application failed for post ${postId}:`, err);
+  }
+};
+
+const userFlairCacheKey = (subredditName: string, username: string): string =>
+  `flair:v2:user:${username.trim().toLowerCase()}:sub:${subredditName.trim().toLowerCase()}:bases`;
+
+/**
+ * Automatically attaches or updates a user's subreddit flair with their total base score and tier.
+ * Uses Redis to skip redundant Reddit API calls when the score hasn't changed.
+ */
+export const syncUserBaseFlair = async (
+  username: string | undefined,
+  totalBases: number,
+  subredditName: string | undefined = context.subredditName
+): Promise<boolean> => {
+  if (!isFlairEligibleUsername(username) || !subredditName) {
+    return false;
+  }
+
+  const safeBases = Math.max(0, Math.floor(Number.isFinite(totalBases) ? totalBases : 0));
+  const cacheKey = userFlairCacheKey(subredditName, username);
+
+  try {
+    const cachedBases = await redis.get(cacheKey);
+    if (cachedBases === String(safeBases)) {
+      return false;
+    }
+
+    const tier = getBaseScoreTier(safeBases);
+    await reddit.setUserFlair({
+      subredditName,
+      username,
+      text: formatBaseScoreFlairText(safeBases),
+      backgroundColor: tier.backgroundColor,
+      textColor: tier.textColor,
+    });
+
+    await redis.set(cacheKey, String(safeBases));
+    return true;
+  } catch (err) {
+    console.warn(`Could not sync base score flair for u/${username} in r/${subredditName}:`, err);
+    return false;
   }
 };

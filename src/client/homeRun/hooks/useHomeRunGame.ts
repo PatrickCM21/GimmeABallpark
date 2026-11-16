@@ -28,14 +28,17 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 export const useHomeRunGame = (initial: HomeRunGameState) => {
   const [phase, setPhase] = useState<HomeRunPhase>(initial.progress.finished ? 'result' : 'intro');
   const [outcomes, setOutcomes] = useState<HomeRunOutcome[]>(initial.progress.outcomes);
-  const [stats, setStats] = useState<HomeRunRoundStat[]>(initial.stats);
+  const [statsOverride, setStats] = useState<HomeRunRoundStat[] | null>(null);
   const [activeRound, setActiveRound] = useState(initial.progress.outcomes.length);
   const [deadlineAt, setDeadlineAt] = useState<number | null>(null);
   const [pick, setPick] = useState<PickTarget | null>(null);
   const [reveal, setReveal] = useState<HomeRunReveal | null>(null);
+  const [reveals, setReveals] = useState<HomeRunReveal[]>(initial.reveals ?? []);
   const [error, setError] = useState<string | null>(null);
   const [runningToBase, setRunningToBase] = useState<number>(1);
-  const [lifetimeStats, setLifetimeStats] = useState<UserLifetimeStats | undefined>(initial.lifetimeStats);
+  const [lifetimeStatsOverride, setLifetimeStats] = useState<UserLifetimeStats | undefined>(undefined);
+  const stats = statsOverride ?? initial.stats;
+  const lifetimeStats = lifetimeStatsOverride ?? initial.lifetimeStats;
 
   const busyRef = useRef(false);
   const roundRef = useRef(activeRound);
@@ -112,6 +115,11 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
         nextOutcomes = [...outcomesRef.current, outcome];
         finished = isRunFinished(nextOutcomes);
         setStats(res.stats);
+        setReveals((prev) => {
+          const next = [...prev];
+          next[roundRef.current] = nextReveal;
+          return next;
+        });
       } else {
         const [res] = await Promise.all([
           homeRunApi.answer({ round: roundRef.current, pick: side }),
@@ -123,6 +131,15 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
         nextOutcomes = res.progress.outcomes;
         finished = res.progress.finished;
         setStats(res.stats);
+        if (res.reveals) {
+          setReveals(res.reveals);
+        } else {
+          setReveals((prev) => {
+            const next = [...prev];
+            next[roundRef.current] = nextReveal;
+            return next;
+          });
+        }
         if (res.lifetimeStats) {
           setLifetimeStats(res.lifetimeStats);
         }
@@ -256,6 +273,7 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
     activeRound,
     pick,
     reveal,
+    reveals,
     error,
     msLeft,
     runningToBase,
