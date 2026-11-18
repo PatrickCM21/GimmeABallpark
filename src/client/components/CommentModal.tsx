@@ -20,7 +20,7 @@ export const CommentModal = ({
   isPostingComment: boolean;
   setIsPostingComment: (posting: boolean) => void;
   postComment: (text: string) => Promise<unknown>;
-  showToast: (msg: string) => void;
+  showToast: (msg: string, icon?: string) => void;
   userScoreText?: string;
 }) => {
   if (!showCommentModal || !config) return null;
@@ -109,9 +109,9 @@ export const CommentModal = ({
                 await postComment(finalComment);
                 setShowCommentModal(false);
                 setCommentText('');
-                showToast('💬 Comment posted!');
+                showToast('Comment posted!', '💬');
               } catch {
-                showToast('⚠️ Failed to post comment. Try again.');
+                showToast('Failed to post comment. Try again.', '⚠️');
               } finally {
                 setIsPostingComment(false);
               }

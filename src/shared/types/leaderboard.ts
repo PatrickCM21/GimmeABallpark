@@ -5,6 +5,8 @@ export type LeaderboardEntry = {
   username: string;
   score: number;
   snoovatarUrl?: string | undefined;
+  equippedBat?: string | undefined;
+  equippedBall?: string | undefined;
   isCurrentUser?: boolean | undefined;
 };
 

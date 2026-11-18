@@ -387,11 +387,6 @@ const DrawingIntro = ({ audience = [] }: { audience?: HomeRunAudienceMember[] })
         <polygon points="84,58.8 87.2,62 84,65.2 80.8,62" fill="#ffffff" stroke="#1E1B4B" strokeWidth="0.8" strokeLinejoin="round" />
       </svg>
 
-      {/* 2nd Base Number (aligned flat on ground at 30%) */}
-      <div className="absolute top-[30%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-        <span className="text-[7px] font-black text-indigo-950 leading-none">2</span>
-      </div>
-
       {/* Pitcher Mound & Pitcher Snoo */}
       <div className="absolute top-[64%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
         <div className="w-14 h-5 rounded-[50%] bg-[#b46332] border border-[#8c430e] flex items-center justify-center shadow-xs">
@@ -465,17 +460,6 @@ const DrawingRound1 = ({ audience = [] }: { audience?: HomeRunAudienceMember[] }
         <polygon points="16,58.5 19.5,62 16,65.5 12.5,62" fill="#ffffff" stroke="#1E1B4B" strokeWidth="0.8" strokeLinejoin="round" />
         <polygon points="84,58.5 87.5,62 84,65.5 80.5,62" fill="#ffffff" stroke="#1E1B4B" strokeWidth="0.8" strokeLinejoin="round" />
       </svg>
-
-      {/* Base numbers aligned flat on the ground */}
-      <div className="absolute top-[30%] left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-        <span className="text-[8px] font-black text-indigo-950 leading-none">2</span>
-      </div>
-      <div className="absolute top-[62%] left-[16%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-        <span className="text-[7px] font-black text-indigo-950 leading-none">3</span>
-      </div>
-      <div className="absolute top-[62%] left-[84%] -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-        <span className="text-[7px] font-black text-indigo-950 leading-none">1</span>
-      </div>
 
       {/* Pitcher's Mound & Pitcher Snoo: Centered in the green infield diamond below 2nd base */}
       <div className="absolute top-[66%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none z-20">
@@ -571,11 +555,6 @@ const DrawingRound2 = ({ audience = [] }: { audience?: HomeRunAudienceMember[] }
           strokeLinejoin="round"
         />
       </svg>
-
-      {/* 2nd Base Number "2" centered on the flat ground-aligned base bag */}
-      <div className="absolute top-[54%] left-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center pointer-events-none z-20">
-        <span className="text-xs sm:text-sm font-black text-indigo-950 leading-none">2</span>
-      </div>
     </div>
   </div>
 );

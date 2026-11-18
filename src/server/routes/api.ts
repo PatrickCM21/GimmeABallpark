@@ -23,6 +23,7 @@ import {
   clearNormalBallparkRecorded,
 } from '../core/userStatsStore';
 import { getLeaderboard } from '../core/leaderboard';
+import { FLAIRS, applyFlair, resolveFlair } from '../core/flair';
 import { syncUserBaseFlair } from '../core/flair';
 import type { UserStatsResponse } from '../../shared/types/stats';
 import { calculateTotalBases, createEmptyUserStats } from '../../shared/types/stats';
@@ -241,6 +242,11 @@ api.post('/create-game', async (c) => {
       redis.set(`post:${newCleanId}:config`, JSON.stringify(fullConfig)),
       redis.set(`post:${newIdWithPrefix}:config`, JSON.stringify(fullConfig)),
     ]);
+
+    if (subredditName) {
+      const { flairId } = await resolveFlair(subredditName, FLAIRS.communityBallpark);
+      await applyFlair(subredditName, newPost.id, FLAIRS.communityBallpark, flairId);
+    }
 
     // If author provided an explanation/fact, post it as a comment on the thread
     if (fullConfig.explanation && fullConfig.explanation.trim()) {

@@ -1,13 +1,13 @@
 import { Suspense, lazy, useState } from 'react';
 import { HOME_RUN_ROUND_COUNT, countBases, isHomeRun } from '../../../shared/homeRun/engine';
-import type { HomeRunMatchupPublic, HomeRunOutcome, HomeRunReveal, HomeRunRoundStat } from '../../../shared/types/homeRun';
+import type { HomeRunMatchupPublic, HomeRunOutcome, HomeRunReveal, HomeRunRoundStat, BatId, BallId } from '../../../shared/types/homeRun';
 import type { UserLifetimeStats } from '../../../shared/types/stats';
 import { BASE_LABELS } from '../constants';
 import { BaseDiamond } from './BaseDiamond';
 import { OutcomeBadge } from './OutcomeBadge';
 import { RoundPips } from './RoundPips';
-import { SoundToggleButton } from './SoundToggleButton';
 import { LeaderboardModal, TrophyIcon } from './LeaderboardModal';
+import { ShopModal, BatStoreIcon } from './ShopModal';
 
 const LifetimeStatsModal = lazy(() =>
   import('../../components/LifetimeStatsModal').then((m) => ({ default: m.LifetimeStatsModal }))
@@ -42,6 +42,19 @@ type ResultScreenProps = {
   snoovatarUrl?: string | undefined;
   username?: string | undefined;
   lifetimeStats?: UserLifetimeStats | undefined;
+  userBases?: number | undefined;
+  equippedBat?: BatId | undefined;
+  ownedBats?: readonly BatId[] | undefined;
+  equippedBall?: BallId | undefined;
+  ownedBalls?: readonly BallId[] | undefined;
+  isDev?: boolean | undefined;
+  onUpdateShopState?: (next: {
+    userBases?: number;
+    equippedBat?: BatId;
+    ownedBats?: BatId[];
+    equippedBall?: BallId;
+    ownedBalls?: BallId[];
+  }) => void;
   onTryAgain: () => void;
   /** Provided only where replaying is allowed (dev subreddits). */
   onReset?: (() => void) | undefined;
@@ -75,6 +88,13 @@ export const ResultScreen = ({
   snoovatarUrl,
   username,
   lifetimeStats,
+  userBases = 0,
+  equippedBat = 'default',
+  ownedBats = ['default'],
+  equippedBall = 'default',
+  ownedBalls = ['default'],
+  isDev = false,
+  onUpdateShopState,
   onTryAgain,
   onReset,
 }: ResultScreenProps) => {
@@ -82,6 +102,7 @@ export const ResultScreen = ({
   const headline = getHeadline(bases);
   const [showStatsModal, setShowStatsModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
 
   // Starts viewing the last question attempted by the player (e.g. Q1 if out on Q1, Q4 if home run)
   const initialRound = Math.max(0, Math.min(outcomes.length - 1, rounds.length - 1));
@@ -99,7 +120,7 @@ export const ResultScreen = ({
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-between text-center animate-pop-bounce w-full h-full max-h-full overflow-hidden px-1 py-0.5 gap-1">
+    <div className="relative flex flex-col flex-1 min-h-0 items-center justify-between text-center animate-pop-bounce w-full h-full max-h-full overflow-hidden px-1 py-0.5 gap-0.5 sm:gap-1">
       {/* Top-left Stats & Leaderboard (icon-only on mobile, out of flow so they don't push content down) */}
       <div className="absolute top-0.5 left-0.5 z-30 flex flex-col items-start gap-1.5">
         <button
@@ -125,19 +146,28 @@ export const ResultScreen = ({
         </button>
       </div>
 
-      {/* Top-right Sound Toggle (out of flow) */}
-      <div className="absolute top-0.5 right-0.5 z-30">
-        <SoundToggleButton />
+      {/* Top-right Bat Store button */}
+      <div className="absolute top-0.5 right-0.5 z-30 flex flex-col items-end gap-1.5">
+        <button
+          type="button"
+          onClick={() => setShowShopModal(true)}
+          className="flex items-center gap-1.5 bg-yellow-100 hover:bg-yellow-200 active:scale-95 text-indigo-950 text-[11px] font-black uppercase tracking-wider p-1.5 sm:px-3 sm:py-1 rounded-full border-2 border-indigo-950 shadow-[0_2px_0_0_#1E1B4B] cursor-pointer transition-transform whitespace-nowrap"
+          title="Bat Store"
+          aria-label="Bat Store"
+        >
+          <BatStoreIcon className="w-6 h-6 sm:w-4 sm:h-4" />
+          <span className="hidden sm:inline">Store</span>
+        </button>
       </div>
 
       {/* Header with title, subtitle, and Try Again button underneath */}
       <div className="w-full flex flex-col items-center gap-0.5 shrink-0 pt-0.5">
         <h2
-          className={`w-full pl-11 pr-24 sm:px-24 text-[clamp(0.75rem,3.4vw,1.375rem)] sm:text-[22px] font-black uppercase leading-tight text-center whitespace-nowrap ${headline.tone}`}
+          className={`w-full px-10 sm:px-24 text-[clamp(1.15rem,5vw,1.375rem)] sm:text-[22px] font-black uppercase leading-tight text-center whitespace-nowrap ${headline.tone}`}
         >
           {headline.title}
         </h2>
-        <p className="text-[11px] sm:text-xs font-semibold text-slate-600 px-11 sm:px-0">{headline.subtitle}</p>
+        <p className="text-xs sm:text-sm font-semibold text-slate-600 px-10 sm:px-0">{headline.subtitle}</p>
 
         {/* Try Again button & notice below the title */}
         <div className="flex flex-col items-center gap-1 mt-1">
@@ -278,7 +308,23 @@ export const ResultScreen = ({
         onClose={() => setShowLeaderboardModal(false)}
         currentUsername={username}
         snoovatarUrl={snoovatarUrl}
+        equippedBat={equippedBat}
+        equippedBall={equippedBall}
       />
+
+      {onUpdateShopState && (
+        <ShopModal
+          isOpen={showShopModal}
+          onClose={() => setShowShopModal(false)}
+          userBases={userBases}
+          equippedBat={equippedBat}
+          ownedBats={ownedBats}
+          equippedBall={equippedBall}
+          ownedBalls={ownedBalls}
+          isDev={isDev}
+          onUpdateShopState={onUpdateShopState}
+        />
+      )}
     </div>
   );
 };

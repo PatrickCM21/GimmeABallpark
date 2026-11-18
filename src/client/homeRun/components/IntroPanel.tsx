@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { HOME_RUN_ROUND_COUNT } from '../../../shared/homeRun/engine';
-import type { HomeRunOutcome } from '../../../shared/types/homeRun';
+import type { HomeRunOutcome, BatId, BallId } from '../../../shared/types/homeRun';
 import { GameButton } from '../../components/GameButton';
-import { playSound, preloadSounds, unlockAudio, type SoundHandle } from '../sounds';
+import { playBatHitSound, playSound, preloadSounds, unlockAudio, type SoundHandle } from '../sounds';
 import { BaseballBat } from './BaseballBat';
 import { FullBodySnoo } from './FullBodySnoo';
 import { HurlingBall } from './HurlingBall';
 import { RoundPips } from './RoundPips';
+import { ShopModal, BatStoreIcon } from './ShopModal';
 import { SnooAvatar } from './SnooAvatar';
 import { SoundToggleButton } from './SoundToggleButton';
 
@@ -16,6 +17,19 @@ type IntroPanelProps = {
   timeLimitMs: number;
   outcomes: readonly HomeRunOutcome[];
   snoovatarUrl?: string | undefined;
+  userBases?: number | undefined;
+  equippedBat?: BatId | undefined;
+  ownedBats?: readonly BatId[] | undefined;
+  equippedBall?: BallId | undefined;
+  ownedBalls?: readonly BallId[] | undefined;
+  isDev?: boolean | undefined;
+  onUpdateShopState?: (next: {
+    userBases?: number;
+    equippedBat?: BatId;
+    ownedBats?: BatId[];
+    equippedBall?: BallId;
+    ownedBalls?: BallId[];
+  }) => void;
   onPlay: () => void;
 };
 
@@ -33,9 +47,17 @@ export const IntroPanel = ({
   timeLimitMs,
   outcomes,
   snoovatarUrl,
+  userBases = 0,
+  equippedBat = 'default',
+  ownedBats = ['default'],
+  equippedBall = 'default',
+  ownedBalls = ['default'],
+  isDev = false,
+  onUpdateShopState,
   onPlay,
 }: IntroPanelProps) => {
   const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [showShopModal, setShowShopModal] = useState(false);
   const [stage, setStage] = useState<SwingStage>('idle');
   const [ballState, setBallState] = useState<'rising' | 'hurling' | 'hit'>('rising');
   const [isPitching, setIsPitching] = useState(true);
@@ -124,7 +146,7 @@ export const IntroPanel = ({
 
     // Bat hitting the ball at the moment of contact (~280ms)
     const tHit = window.setTimeout(() => {
-      playSound('batHit');
+      playBatHitSound(equippedBat);
     }, 280);
 
     // Step 2: Contact hit occurs at ~400ms -> start running sprint & dirt scuffling sound
@@ -152,11 +174,11 @@ export const IntroPanel = ({
 
   return (
     <div
-      className={`relative flex flex-col items-center justify-between text-center py-1 max-h-full h-full overflow-hidden select-none ${
+      className={`relative flex flex-col flex-1 min-h-0 w-full items-center justify-between text-center py-0.5 sm:py-1 max-h-full h-full overflow-hidden select-none ${
         stage === 'phasing' ? 'phase-fade-out' : ''
       }`}
     >
-      {/* Top Bar with How to Play button on left & Sound Effects Toggle on right */}
+      {/* Top Bar with How to Play button on left & Store + Sound Effects Toggle on right */}
       <div className="w-full flex items-center justify-between shrink-0 mb-1 z-30">
         <button
           type="button"
@@ -168,13 +190,26 @@ export const IntroPanel = ({
           <span>How to play</span>
         </button>
 
-        <SoundToggleButton />
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setShowShopModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 hover:bg-amber-200 border-2 border-indigo-950 text-indigo-950 font-black text-xs uppercase tracking-wide cursor-pointer transition-all active:translate-y-0.5 shadow-xs"
+            aria-label="Bat Store"
+            title="Bat Store"
+          >
+            <BatStoreIcon size={15} />
+            <span>Store</span>
+          </button>
+
+          <SoundToggleButton />
+        </div>
       </div>
 
       {/* Main Stadium Field Arena: Colors match the outer stadium turf, sky & infield */}
       <div
         ref={fieldRef}
-        className="relative w-full flex-1 min-h-[14rem] sm:min-h-[16rem] flex flex-col items-center justify-end my-1 overflow-hidden rounded-2xl border-3 border-indigo-950 select-none touch-none"
+        className="relative w-full flex-1 min-h-0 sm:min-h-[16rem] flex flex-col items-center justify-end my-1 overflow-hidden rounded-2xl border-3 border-indigo-950 select-none touch-none"
       >
         {/* Sky: Sunny blue sky matching Gimme A Ballpark theme */}
         <div className="absolute inset-x-0 top-0 h-[10%] bg-linear-to-b from-[#0A7CD5] to-[#1399FF]" />
@@ -254,17 +289,6 @@ export const IntroPanel = ({
             strokeWidth="0.8"
             strokeLinejoin="round"
           />
-          <text
-            x="50"
-            y="19.2"
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize="2.8"
-            fontWeight="900"
-            fill="#1E1B4B"
-          >
-            2
-          </text>
 
           {/* 3rd Base: Flat diamond bag aligned with field perspective */}
           <polygon
@@ -274,17 +298,6 @@ export const IntroPanel = ({
             strokeWidth="0.8"
             strokeLinejoin="round"
           />
-          <text
-            x="16"
-            y="50.2"
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize="2.8"
-            fontWeight="900"
-            fill="#1E1B4B"
-          >
-            3
-          </text>
 
           {/* 1st Base: Flat diamond bag aligned with field perspective */}
           <polygon
@@ -294,17 +307,6 @@ export const IntroPanel = ({
             strokeWidth="0.8"
             strokeLinejoin="round"
           />
-          <text
-            x="84"
-            y="50.2"
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize="2.8"
-            fontWeight="900"
-            fill="#1E1B4B"
-          >
-            1
-          </text>
 
           {/* Home Base Plate: Regulation pentagon flat on the clay */}
           <polygon
@@ -314,17 +316,6 @@ export const IntroPanel = ({
             strokeWidth="0.8"
             strokeLinejoin="round"
           />
-          <text
-            x="50"
-            y="87.6"
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize="2.8"
-            fontWeight="900"
-            fill="#1E1B4B"
-          >
-            4
-          </text>
         </svg>
 
         {/* Pitcher's Mound & Snoo Pitcher (In front of 2nd base, centered between Home and 2nd) */}
@@ -364,6 +355,7 @@ export const IntroPanel = ({
           }`}
         >
           <HurlingBall
+            ballId={equippedBall}
             size={40}
             windAngle={104}
             showWind={true}
@@ -374,13 +366,19 @@ export const IntroPanel = ({
           />
         </button>
 
-        {/* 2. Contact Hit Explosions (Impact flash + CRACK!! badge timed to moment of contact) */}
+        {/* 2. Contact Hit Explosions (Impact flash + bat-specific comic badge timed to moment of contact) */}
         {stage !== 'idle' && (
           <div className="absolute bottom-16 left-[46%] z-40 pointer-events-none -translate-x-1/2 impact-delayed">
             <div className="impact-flash w-24 h-24 rounded-full bg-yellow-300/85 blur-xs" />
             <div className="crack-pop absolute inset-0 flex items-center justify-center">
               <span className="text-2xl font-black italic text-red-600 bg-yellow-300 px-2.5 py-0.5 rounded-lg border-2 border-white shadow-[0_4px_0_#991b1b] -rotate-6">
-                CRACK!!
+                {equippedBat === 'metal'
+                  ? 'CLANG!!'
+                  : equippedBat === 'zombie_killer'
+                  ? 'CRUNCH!!'
+                  : equippedBat === 'inflatable'
+                  ? 'POW!!'
+                  : 'CRACK!!'}
               </span>
             </div>
           </div>
@@ -409,7 +407,7 @@ export const IntroPanel = ({
                     ['--bat-start' as string]: `${batAngle}deg`,
                   }}
                 >
-                  <BaseballBat className="w-full h-full drop-shadow-md" />
+                  <BaseballBat batId={equippedBat} className="w-full h-full drop-shadow-md" />
                 </div>
               </div>
             </div>
@@ -418,7 +416,7 @@ export const IntroPanel = ({
             <div className="relative w-48 h-36 intro-sprint">
               {/* Dropped Bat on dirt */}
               <div className="absolute left-2 bottom-2 origin-center bat-drop">
-                <BaseballBat className="w-8 h-22 opacity-80" />
+                <BaseballBat batId={equippedBat} className="w-8 h-22 opacity-80" />
               </div>
 
               {/* Trailing dust clouds */}
@@ -528,6 +526,20 @@ export const IntroPanel = ({
             </button>
           </div>
         </div>
+      )}
+
+      {onUpdateShopState && (
+        <ShopModal
+          isOpen={showShopModal}
+          onClose={() => setShowShopModal(false)}
+          userBases={userBases}
+          equippedBat={equippedBat}
+          ownedBats={ownedBats}
+          equippedBall={equippedBall}
+          ownedBalls={ownedBalls}
+          isDev={isDev}
+          onUpdateShopState={onUpdateShopState}
+        />
       )}
     </div>
   );

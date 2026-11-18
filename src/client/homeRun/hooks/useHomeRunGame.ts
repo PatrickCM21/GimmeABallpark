@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isRunFinished } from '../../../shared/homeRun/engine';
-import type { HomeRunGameState, HomeRunOutcome, HomeRunReveal, HomeRunRoundStat, HomeRunSide } from '../../../shared/types/homeRun';
+import type {
+  HomeRunGameState,
+  HomeRunOutcome,
+  HomeRunReveal,
+  HomeRunRoundStat,
+  HomeRunSide,
+  BatId,
+  BallId,
+} from '../../../shared/types/homeRun';
 import type { UserLifetimeStats } from '../../../shared/types/stats';
+import { calculateTotalBases } from '../../../shared/types/stats';
+import { sumOwnedShopCost } from '../../../shared/types/shop';
 import { homeRunApi } from '../homeRunApi';
 import { FALL_MS, MISS_SETTLE_MS, SERVE_MS, SMASH_SETTLE_MS, STRIKE_MS } from '../constants';
 import { playSound, preloadSounds, startGameMusic, stopGameMusic, unlockAudio } from '../sounds';
@@ -37,8 +47,49 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
   const [error, setError] = useState<string | null>(null);
   const [runningToBase, setRunningToBase] = useState<number>(1);
   const [lifetimeStatsOverride, setLifetimeStats] = useState<UserLifetimeStats | undefined>(undefined);
+  const [userBasesOverride, setUserBasesOverride] = useState<number | undefined>(undefined);
+  const [equippedBatOverride, setEquippedBatOverride] = useState<BatId | undefined>(undefined);
+  const [ownedBatsOverride, setOwnedBatsOverride] = useState<BatId[] | undefined>(undefined);
+  const [equippedBallOverride, setEquippedBallOverride] = useState<BallId | undefined>(undefined);
+  const [ownedBallsOverride, setOwnedBallsOverride] = useState<BallId[] | undefined>(undefined);
+
   const stats = statsOverride ?? initial.stats;
   const lifetimeStats = lifetimeStatsOverride ?? initial.lifetimeStats;
+  const ownedBats: BatId[] = ownedBatsOverride ?? initial.ownedBats ?? ['default'];
+  const equippedBat: BatId = equippedBatOverride ?? initial.equippedBat ?? 'default';
+  const ownedBalls: BallId[] = ownedBallsOverride ?? initial.ownedBalls ?? ['default'];
+  const equippedBall: BallId = equippedBallOverride ?? initial.equippedBall ?? 'default';
+  const fallbackBases = lifetimeStats
+    ? Math.max(0, calculateTotalBases(lifetimeStats) - sumOwnedShopCost(ownedBats, ownedBalls))
+    : 0;
+  const userBases = userBasesOverride ?? initial.userBases ?? fallbackBases;
+
+  const updateShopState = useCallback(
+    (next: {
+      userBases?: number;
+      equippedBat?: BatId;
+      ownedBats?: BatId[];
+      equippedBall?: BallId;
+      ownedBalls?: BallId[];
+    }) => {
+      if (typeof next.userBases === 'number') {
+        setUserBasesOverride(next.userBases);
+      }
+      if (next.equippedBat) {
+        setEquippedBatOverride(next.equippedBat);
+      }
+      if (next.ownedBats) {
+        setOwnedBatsOverride(next.ownedBats);
+      }
+      if (next.equippedBall) {
+        setEquippedBallOverride(next.equippedBall);
+      }
+      if (next.ownedBalls) {
+        setOwnedBallsOverride(next.ownedBalls);
+      }
+    },
+    []
+  );
 
   const busyRef = useRef(false);
   const roundRef = useRef(activeRound);
@@ -142,6 +193,9 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
         }
         if (res.lifetimeStats) {
           setLifetimeStats(res.lifetimeStats);
+        }
+        if (typeof res.userBases === 'number') {
+          setUserBasesOverride(res.userBases);
         }
       }
 
@@ -279,6 +333,12 @@ export const useHomeRunGame = (initial: HomeRunGameState) => {
     runningToBase,
     completeBaseRun,
     lifetimeStats,
+    userBases,
+    equippedBat,
+    ownedBats,
+    equippedBall,
+    ownedBalls,
+    updateShopState,
     begin,
     tryAgain,
     choose,

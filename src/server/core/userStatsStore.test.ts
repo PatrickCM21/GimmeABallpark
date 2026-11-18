@@ -7,6 +7,15 @@ import {
   applyNormalGameToStats,
   calculateTotalBases,
 } from '../../shared/types/stats.ts';
+import {
+  BAT_ITEMS,
+  BALL_ITEMS,
+  getBatItemById,
+  getBallItemById,
+  sumOwnedBatsCost,
+  sumOwnedBallsCost,
+  sumOwnedShopCost,
+} from '../../shared/types/shop.ts';
 
 test('calculateBallparkCloseness computes accuracy and thresholds correctly', () => {
   // Spot on
@@ -97,4 +106,37 @@ test('applyNormalGameToStats tracks games played and running average closeness',
   assert.equal(stats.exactBullseyes, 1);
   assert.equal(stats.withinThreePercent, 1);
   assert.equal(stats.beatHivemind, 2);
+});
+
+test('bat store defines metal, zombie_killer, and inflatable bats at 50, 100, and 200 bases', () => {
+  assert.equal(BAT_ITEMS.length, 4);
+  assert.equal(getBatItemById('default')?.price, 0);
+  assert.equal(getBatItemById('metal')?.price, 50);
+  assert.equal(getBatItemById('zombie_killer')?.price, 100);
+  assert.equal(getBatItemById('inflatable')?.price, 200);
+  assert.equal(getBatItemById('unknown'), undefined);
+
+  assert.equal(sumOwnedBatsCost(['default']), 0);
+  assert.equal(sumOwnedBatsCost(['default', 'metal']), 50);
+  assert.equal(sumOwnedBatsCost(['default', 'metal', 'zombie_killer']), 150);
+  assert.equal(sumOwnedBatsCost(['default', 'metal', 'zombie_killer', 'inflatable']), 350);
+});
+
+test('ball store defines default, tennis, cricket, and golf balls at 0, 50, 100, and 200 bases', () => {
+  assert.equal(BALL_ITEMS.length, 4);
+  assert.equal(getBallItemById('default')?.price, 0);
+  assert.equal(getBallItemById('tennis')?.price, 50);
+  assert.equal(getBallItemById('cricket')?.price, 100);
+  assert.equal(getBallItemById('golf')?.price, 200);
+  assert.equal(getBallItemById('unknown'), undefined);
+
+  assert.equal(sumOwnedBallsCost(['default']), 0);
+  assert.equal(sumOwnedBallsCost(['default', 'tennis']), 50);
+  assert.equal(sumOwnedBallsCost(['default', 'tennis', 'cricket']), 150);
+  assert.equal(sumOwnedBallsCost(['default', 'tennis', 'cricket', 'golf']), 350);
+
+  assert.equal(
+    sumOwnedShopCost(['default', 'metal'], ['default', 'cricket']),
+    150
+  );
 });

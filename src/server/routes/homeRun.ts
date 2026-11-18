@@ -40,11 +40,17 @@ import {
   loadUserStats,
   recordHomeRunStats,
   clearHomeRunRecorded,
+  loadUserBatShopState,
+  buyBatItem,
+  equipBatItem,
+  addDevBonusBases,
+  resetOwnedBats,
 } from '../core/userStatsStore';
 import { getLeaderboard } from '../core/leaderboard';
 import { syncUserBaseFlair } from '../core/flair';
 import { calculateTotalBases } from '../../shared/types/stats';
 import type { UserLifetimeStats } from '../../shared/types/stats';
+import type { ShopBuyRequest, ShopBuyResponse, ShopEquipRequest, ShopEquipResponse } from '../../shared/types/shop';
 import type { LeaderboardPeriod, LeaderboardResponse } from '../../shared/types/leaderboard';
 
 export const homeRun = new Hono();
@@ -129,6 +135,7 @@ export const buildHomeRunInitialState = async (player: HomeRunPlayerContext): Pr
   );
 
   if (!isRunFinished(progress.outcomes)) {
+    const shopState = await loadUserBatShopState(player.username);
     return {
       ladderTitle: player.ladder.title,
       puzzleNumber: player.puzzleNumber,
@@ -138,6 +145,12 @@ export const buildHomeRunInitialState = async (player: HomeRunPlayerContext): Pr
       timeLimitMs: HOME_RUN_TIME_LIMIT_MS,
       username: player.username,
       canReset: isDevSubreddit(),
+      lifetimeStats: shopState.lifetimeStats,
+      userBases: shopState.userBases,
+      equippedBat: shopState.equippedBat,
+      ownedBats: shopState.ownedBats,
+      equippedBall: shopState.equippedBall,
+      ownedBalls: shopState.ownedBalls,
     };
   }
 
@@ -157,6 +170,7 @@ export const buildHomeRunInitialState = async (player: HomeRunPlayerContext): Pr
     console.warn('Could not record Home Run lifetime stats in /state:', err);
   }
   const lifetimeStats = await loadUserStats(player.username);
+  const shopState = await loadUserBatShopState(player.username, lifetimeStats);
   void syncUserBaseFlair(player.username, calculateTotalBases(lifetimeStats));
 
   return {
@@ -172,6 +186,11 @@ export const buildHomeRunInitialState = async (player: HomeRunPlayerContext): Pr
     audience,
     canReset: isDevSubreddit(),
     lifetimeStats,
+    userBases: shopState.userBases,
+    equippedBat: shopState.equippedBat,
+    ownedBats: shopState.ownedBats,
+    equippedBall: shopState.equippedBall,
+    ownedBalls: shopState.ownedBalls,
   };
 };
 
@@ -204,6 +223,7 @@ homeRun.get('/extras', async (c) => {
     if (progress.outcomes.length > 0) {
       void addAudienceMember(player.postId, player.username, snoovatarUrl);
     }
+    const shopState = await loadUserBatShopState(player.username, lifetimeStats);
     void syncUserBaseFlair(player.username, calculateTotalBases(lifetimeStats));
 
     return c.json<HomeRunExtrasResponse>({
@@ -211,6 +231,11 @@ homeRun.get('/extras', async (c) => {
       audience,
       stats,
       lifetimeStats,
+      userBases: shopState.userBases,
+      equippedBat: shopState.equippedBat,
+      ownedBats: shopState.ownedBats,
+      equippedBall: shopState.equippedBall,
+      ownedBalls: shopState.ownedBalls,
     });
   } catch (error: unknown) {
     console.error('API /home-run/extras Error:', error);
@@ -297,10 +322,13 @@ homeRun.post('/answer', async (c) => {
     })();
 
     let lifetimeStats: UserLifetimeStats | undefined;
+    let userBases: number | undefined;
     const finished = isRunFinished(next.outcomes);
     if (finished) {
       try {
         lifetimeStats = await recordHomeRunStats(player.postId, player.username, countBases(next.outcomes));
+        const shopState = await loadUserBatShopState(player.username, lifetimeStats);
+        userBases = shopState.userBases;
       } catch (err) {
         console.warn('Could not record Home Run lifetime stats in /answer:', err);
       }
@@ -313,6 +341,7 @@ homeRun.post('/answer', async (c) => {
       progress: toPublicProgress(next, now),
       stats: await loadRoundStats(player.postId),
       lifetimeStats,
+      userBases,
     });
   } catch (error: unknown) {
     console.error('API /home-run/answer Error:', error);
@@ -393,5 +422,106 @@ homeRun.get('/leaderboard', async (c) => {
   } catch (error: unknown) {
     console.error('API /home-run/leaderboard Error:', error);
     return c.json<HomeRunErrorResponse>({ error: 'Failed to fetch leaderboard' }, 500);
+  }
+});
+
+homeRun.post('/shop/buy', async (c) => {
+  try {
+    const username = await reddit.getCurrentUsername();
+    if (!username) {
+      return c.json<HomeRunErrorResponse>({ error: 'Log in to purchase items' }, 401);
+    }
+
+    const body = await c.req.json<ShopBuyRequest>();
+    if (!body || typeof body.itemId !== 'string') {
+      return c.json<HomeRunErrorResponse>({ error: 'Invalid itemId' }, 400);
+    }
+
+    const result = await buyBatItem(username, body.itemId, body.category);
+    if (!result.success) {
+      return c.json<HomeRunErrorResponse>({ error: result.error }, 400);
+    }
+
+    return c.json<ShopBuyResponse>({
+      success: true,
+      bases: result.bases,
+      equippedBat: result.equippedBat,
+      ownedBats: result.ownedBats,
+      equippedBall: result.equippedBall,
+      ownedBalls: result.ownedBalls,
+      lifetimeStats: result.lifetimeStats,
+    });
+  } catch (error: unknown) {
+    console.error('API /home-run/shop/buy Error:', error);
+    return c.json<HomeRunErrorResponse>({ error: 'Failed to purchase item' }, 500);
+  }
+});
+
+homeRun.post('/shop/equip', async (c) => {
+  try {
+    const username = await reddit.getCurrentUsername();
+    if (!username) {
+      return c.json<HomeRunErrorResponse>({ error: 'Log in to equip items' }, 401);
+    }
+
+    const body = await c.req.json<ShopEquipRequest>();
+    if (!body || typeof body.itemId !== 'string') {
+      return c.json<HomeRunErrorResponse>({ error: 'Invalid itemId' }, 400);
+    }
+
+    const result = await equipBatItem(username, body.itemId, isDevSubreddit(), body.category);
+    if (!result.success) {
+      return c.json<HomeRunErrorResponse>({ error: result.error }, 400);
+    }
+
+    return c.json<ShopEquipResponse>({
+      success: true,
+      equippedBat: result.equippedBat,
+      equippedBall: result.equippedBall,
+    });
+  } catch (error: unknown) {
+    console.error('API /home-run/shop/equip Error:', error);
+    return c.json<HomeRunErrorResponse>({ error: 'Failed to equip item' }, 500);
+  }
+});
+
+homeRun.post('/shop/dev-bases', async (c) => {
+  if (!isDevSubreddit()) {
+    return c.json<HomeRunErrorResponse>({ error: 'Not available' }, 403);
+  }
+  try {
+    const username = await reddit.getCurrentUsername();
+    if (!username) {
+      return c.json<HomeRunErrorResponse>({ error: 'Log in required' }, 401);
+    }
+    const body = await c.req.json<{ amount?: number; resetOwned?: boolean }>().catch(() => ({}));
+    if (body && 'resetOwned' in body && body.resetOwned) {
+      const resetState = await resetOwnedBats(username);
+      return c.json({
+        success: true,
+        bases: resetState.bases,
+        equippedBat: resetState.equippedBat,
+        ownedBats: resetState.ownedBats,
+        equippedBall: resetState.equippedBall,
+        ownedBalls: resetState.ownedBalls,
+      });
+    }
+    const delta =
+      body && 'amount' in body && typeof body.amount === 'number' && Number.isFinite(body.amount)
+        ? body.amount
+        : 100;
+    const bases = await addDevBonusBases(username, delta);
+    const shopState = await loadUserBatShopState(username);
+    return c.json({
+      success: true,
+      bases,
+      equippedBat: shopState.equippedBat,
+      ownedBats: shopState.ownedBats,
+      equippedBall: shopState.equippedBall,
+      ownedBalls: shopState.ownedBalls,
+    });
+  } catch (error: unknown) {
+    console.error('API /home-run/shop/dev-bases Error:', error);
+    return c.json<HomeRunErrorResponse>({ error: 'Failed to adjust dev bases' }, 500);
   }
 });

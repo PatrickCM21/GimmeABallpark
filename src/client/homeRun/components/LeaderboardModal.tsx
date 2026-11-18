@@ -12,6 +12,8 @@ export type LeaderboardModalProps = {
   onClose: () => void;
   currentUsername?: string | undefined;
   snoovatarUrl?: string | undefined;
+  equippedBat?: string | undefined;
+  equippedBall?: string | undefined;
 };
 
 type TrophyIconProps = {
@@ -156,6 +158,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   onClose,
   currentUsername,
   snoovatarUrl,
+  equippedBat,
+  equippedBall,
 }) => {
   const [period, setPeriod] = useState<LeaderboardPeriod>('all_time');
   const [page, setPage] = useState<number>(1);
@@ -447,6 +451,8 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                 <LeaderboardAvatar
                   username={currentUserEntry.username}
                   snoovatarUrl={currentUserEntry.snoovatarUrl || snoovatarUrl}
+                  equippedBat={equippedBat || currentUserEntry.equippedBat}
+                  equippedBall={equippedBall || currentUserEntry.equippedBall}
                   size={34}
                 />
               </div>
@@ -539,6 +545,12 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                         username={entry.username}
                         snoovatarUrl={
                           entry.snoovatarUrl || (isCurrentUser ? snoovatarUrl : undefined)
+                        }
+                        equippedBat={
+                          isCurrentUser && equippedBat ? equippedBat : entry.equippedBat
+                        }
+                        equippedBall={
+                          isCurrentUser && equippedBall ? equippedBall : entry.equippedBall
                         }
                         size={32}
                       />

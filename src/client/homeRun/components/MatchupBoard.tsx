@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import type { HomeRunMatchupPublic, HomeRunReveal, HomeRunSide } from '../../../shared/types/homeRun';
+import type { HomeRunMatchupPublic, HomeRunReveal, HomeRunSide, BallId } from '../../../shared/types/homeRun';
 import { BALL_SIZE_PX } from '../constants';
 import { getLaunchPoint, useElementSize, usePointerPosition, type Point } from '../hooks/useArenaGeometry';
 import type { HomeRunPhase, PickTarget } from '../hooks/useHomeRunGame';
@@ -21,6 +21,7 @@ type MatchupBoardProps = {
   msLeft?: number;
   /** Total round time limit in ms (default 10,000) */
   timeLimitMs?: number;
+  equippedBall?: BallId | string | undefined;
   onChoose: (side: HomeRunSide, point: Point) => void;
 };
 
@@ -64,6 +65,7 @@ export const MatchupBoard = ({
   roundIndex,
   msLeft = 10000,
   timeLimitMs = 10000,
+  equippedBall = 'default',
   onChoose,
 }: MatchupBoardProps) => {
   const arenaRef = useRef<HTMLDivElement>(null);
@@ -111,7 +113,7 @@ export const MatchupBoard = ({
     <div
       ref={arenaRef}
       {...handlers}
-      className={`relative w-full h-full min-h-[19rem] flex-1 rounded-xl overflow-hidden border-3 border-indigo-950 touch-none select-none
+      className={`relative w-full h-full min-h-0 flex-1 flex flex-col rounded-xl overflow-hidden border-3 border-indigo-950 touch-none select-none
         shadow-inner ${isLive ? 'cursor-none' : ''}`}
     >
       {/* Stadium & Crowds Background with progressive zoom & ticking clock forward push */}
@@ -124,14 +126,14 @@ export const MatchupBoard = ({
       />
 
       {/* Question prompt badge */}
-      <div className="relative z-10 pt-2.5 flex justify-center">
-        <span className="px-5 py-1.5 rounded-full bg-indigo-950/95 backdrop-blur-xs border-2 border-yellow-400 text-yellow-300 text-sm sm:text-base font-black uppercase tracking-wider shadow-md">
+      <div className="relative z-10 pt-2 sm:pt-2.5 shrink-0 flex justify-center">
+        <span className="px-4 py-1 sm:px-5 sm:py-1.5 rounded-full bg-indigo-950/95 backdrop-blur-xs border-2 border-yellow-400 text-yellow-300 text-xs sm:text-base font-black uppercase tracking-wider shadow-md">
           Which number is bigger?
         </span>
       </div>
 
       {/* Glass Target Panes */}
-      <div className="relative z-10 flex flex-col sm:flex-row gap-3 px-3 pt-2.5 pb-14">
+      <div className="relative z-10 flex-1 min-h-0 sm:flex-initial flex flex-col sm:flex-row gap-2 sm:gap-3 px-2.5 sm:px-3 pt-2 sm:pt-2.5 pb-11 sm:pb-14">
         {SIDES.map((side) => (
           <GlassPane
             key={side}
@@ -146,7 +148,7 @@ export const MatchupBoard = ({
       </div>
 
       {/* On-base runner status indicator */}
-      <div className="absolute left-3 bottom-2.5 z-20 flex items-center gap-2 bg-indigo-950/90 backdrop-blur-xs px-2.5 py-1 rounded-full border-2 border-yellow-400 text-white text-[11px] font-black pointer-events-none shadow-lg">
+      <div className="absolute left-2.5 bottom-2 sm:left-3 sm:bottom-2.5 z-20 flex items-center gap-1.5 sm:gap-2 bg-indigo-950/90 backdrop-blur-xs px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border-2 border-yellow-400 text-white text-[10px] sm:text-[11px] font-black pointer-events-none shadow-lg">
         <div className="w-5 h-5 rounded-full overflow-hidden bg-white/20 border border-white/50 flex items-center justify-center">
           <SnooAvatar src={snoovatarUrl} size={20} headOnly />
         </div>
@@ -167,6 +169,7 @@ export const MatchupBoard = ({
         launchFrom={getLaunchPoint(height)}
         floorY={floorY}
         bounceDirection={pick?.side === 'b' ? 1 : -1}
+        ballId={equippedBall}
       />
     </div>
   );

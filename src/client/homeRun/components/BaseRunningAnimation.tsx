@@ -240,7 +240,7 @@ export const BaseRunningAnimation = ({
   return (
     <div
       onClick={handleProceed}
-      className={`relative w-full h-full min-h-[22rem] sm:min-h-[25rem] flex flex-col items-center justify-between p-3 rounded-2xl overflow-hidden select-none border-3 border-indigo-950 cursor-pointer
+      className={`relative w-full h-full flex-1 min-h-0 flex flex-col items-center justify-between p-2.5 sm:p-3 rounded-2xl overflow-hidden select-none border-3 border-indigo-950 cursor-pointer
         bg-linear-to-b from-[#0A7CD5] via-[#1399FF] to-[#167027] shadow-inner ${
           phasing ? 'phase-fade-out' : 'phase-fade-in'
         }`}

@@ -2,15 +2,27 @@ import { Hono } from 'hono';
 import type { UiResponse } from '@devvit/web/shared';
 import { context, redis, reddit } from '@devvit/web/server';
 import { triggerDailyBallparkPost, triggerDailyHomeRunPost } from './scheduler';
+import { FLAIRS, applyFlair, resolveFlair } from '../core/flair';
 
 export const menu = new Hono();
 
 menu.post('/hub-create', async (c) => {
   try {
+    const subredditName = context.subredditName;
+    const { flairId, flairText } = subredditName
+      ? await resolveFlair(subredditName, FLAIRS.hub)
+      : {};
+
     const post = await reddit.submitCustomPost({
       title: 'Gimme a Ballpark Hub',
-      subredditName: context.subredditName,
+      subredditName,
+      flairId,
+      flairText,
     });
+
+    if (subredditName) {
+      await applyFlair(subredditName, post.id, FLAIRS.hub, flairId);
+    }
     
     const cleanId = post.id.replace('t3_', '');
     const idWithPrefix = `t3_${cleanId}`;

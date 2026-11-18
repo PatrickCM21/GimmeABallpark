@@ -6,6 +6,8 @@ import { navigateTo } from '@devvit/web/client';
 import type { GameDataResponse, CreateGameRequest, CreateGameResponse, GuessResponse, Config } from '../shared/api';
 import { getDailyBallpark } from '../shared/data/ballparks';
 import { getRandomCreatorBallpark } from '../shared/data/randomBallparks';
+import { Toast } from './components/Toast';
+import { triggerToast } from './utils/toast';
 
 const fetchGameData = async () => {
   const res = await fetch('/api/game-data');
@@ -85,7 +87,6 @@ const HomeRunMode = lazy(() =>
 export const App = () => {
   const [data, setData] = useState<GameDataResponse | null>(null);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
   const [showStatsModal, setShowStatsModal] = useState(false);
 
   // Synchronize modular theme background with document and CSS variables
@@ -160,11 +161,6 @@ export const App = () => {
   // 2: Real spawns from left & settles
   // 3: Results banner & Ask for ballpark CTA fade in
   const [animStep, setAnimStep] = useState<0 | 1 | 2 | 3>(0);
-
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3200);
-  };
 
   useEffect(() => {
     fetchGameData()
@@ -467,13 +463,13 @@ export const App = () => {
 
   const executeCreateSubmit = async () => {
     if (!text.trim()) {
-      showToast('⚠️ Please enter a subject for your question!');
+      triggerToast('Please enter a subject for your question!', '⚠️');
       return;
     }
     const finalMin = type === 'percentage' ? 0 : min;
     const finalMax = type === 'percentage' ? 100 : max;
     if (finalMin >= finalMax) {
-      showToast('⚠️ Min guess must be less than max guess!');
+      triggerToast('Min guess must be less than max guess!', '⚠️');
       return;
     }
 
@@ -507,13 +503,13 @@ export const App = () => {
 
   const handleCreateSubmit = async () => {
     if (!text.trim()) {
-      showToast('?? Please enter a subject for your question!');
+      triggerToast('Please enter a subject for your question!', '⚠️');
       return;
     }
     const finalMin = type === 'percentage' ? 0 : min;
     const finalMax = type === 'percentage' ? 100 : max;
     if (finalMin >= finalMax) {
-      showToast('?? Min guess must be less than max guess!');
+      triggerToast('Min guess must be less than max guess!', '⚠️');
       return;
     }
 
@@ -589,7 +585,7 @@ export const App = () => {
         setShowResults(false);
         setUserDotShrunk(false);
         setAnimStep(0);
-        showToast(e instanceof Error ? `⚠️ ${e.message}` : '⚠️ Failed to submit guess');
+        triggerToast(e instanceof Error ? e.message : 'Failed to submit guess', '⚠️');
       });
   };
 
@@ -609,9 +605,9 @@ export const App = () => {
       if (newData.config) {
         setCurrentGuess(Math.round((newData.config.min + newData.config.max) / 2));
       }
-      showToast('🔄 Game reset! You can guess again.');
+      triggerToast('Game reset! You can guess again.', '🔄');
     } catch (e: unknown) {
-      showToast(e instanceof Error ? e.message : 'Failed to reset');
+      triggerToast(e instanceof Error ? e.message : 'Failed to reset', '⚠️');
     }
   };
 
@@ -815,13 +811,6 @@ export const App = () => {
       <div
         className="h-full w-full min-h-screen bg-game-bg flex flex-col items-center justify-center p-3 sm:p-4 select-none relative"
       >
-      {/* Toast banner */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-indigo-950 text-white font-bold text-xs sm:text-sm px-4 py-2 rounded-full shadow-2xl border-2 border-yellow-400 flex items-center gap-2 animate-bounce">
-          <span>{toast}</span>
-        </div>
-      )}
-
       {/* Main Persistent Card Container (Smoothly extends or shortens without fading out) */}
       <div
         className={`bg-white rounded-2xl border-3 border-indigo-950 flex flex-col justify-between my-auto h-auto max-h-[95dvh] transition-all duration-500 ease-out ${
@@ -955,7 +944,7 @@ export const App = () => {
     isPostingComment={isPostingComment}
     setIsPostingComment={setIsPostingComment}
     postComment={postComment}
-    showToast={showToast}
+    showToast={triggerToast}
     userScoreText={userScoreText}
   />
 
@@ -975,6 +964,7 @@ export const App = () => {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <Toast />
   </StrictMode>
 );
 

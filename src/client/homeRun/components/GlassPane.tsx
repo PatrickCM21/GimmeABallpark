@@ -35,7 +35,7 @@ export const GlassPane = ({ option, status, revealText, isWinner, disabled, onSe
       type="button"
       disabled={disabled || smashed}
       onClick={(e) => onSelect(e.currentTarget)}
-      className={`relative flex-1 min-h-32 sm:min-h-38 rounded-xl p-3.5 sm:p-4 flex flex-col items-center justify-center text-center gap-1.5 overflow-visible transition-all duration-300
+      className={`relative flex-1 min-h-0 sm:min-h-38 rounded-xl p-2.5 sm:p-4 flex flex-col items-center justify-center text-center gap-1 sm:gap-1.5 overflow-visible transition-all duration-300
         ${
           smashed
             ? 'border-0 bg-transparent shadow-none pointer-events-none opacity-0 scale-105'
@@ -58,14 +58,14 @@ export const GlassPane = ({ option, status, revealText, isWinner, disabled, onSe
 
           {status === 'cracked' && CRACKS}
 
-          <span className="relative text-3xl sm:text-4xl leading-none drop-shadow-xs">{option.emoji}</span>
-          <span className="relative font-black text-lg sm:text-2xl text-indigo-950 leading-snug tracking-tight drop-shadow-[0_1px_1px_rgba(255,255,255,0.75)]">
+          <span className="relative text-2xl sm:text-4xl leading-none drop-shadow-xs">{option.emoji}</span>
+          <span className="relative font-black text-base sm:text-2xl text-indigo-950 leading-tight sm:leading-snug tracking-tight drop-shadow-[0_1px_1px_rgba(255,255,255,0.75)]">
             {option.label}
           </span>
 
           {revealText && (
             <span
-              className={`relative mt-1 px-3 py-1 rounded-full text-sm sm:text-base font-black shadow-sm ${
+              className={`relative mt-0.5 sm:mt-1 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-xs sm:text-base font-black shadow-sm ${
                 isWinner ? 'bg-green-500 text-white' : 'bg-slate-700/85 text-white'
               }`}
             >

@@ -111,7 +111,7 @@ export const BaseDiamond = ({
 
   return (
     <div
-      className="relative w-40 h-40 sm:w-44 sm:h-44 mx-auto shrink-0 select-none my-0.5"
+      className="relative w-36 h-36 sm:w-40 sm:h-40 mx-auto shrink-0 select-none my-0.5"
       role="region"
       aria-label={isHomeRun ? 'Home Run' : playerBases === 0 ? 'Out between home and first base' : BASE_LABELS[playerBases - 1]}
     >

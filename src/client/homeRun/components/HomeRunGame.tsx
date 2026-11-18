@@ -81,9 +81,9 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
       />
 
       {/* Main Game Card Floating above the Stadium with clean border outline */}
-      <div className="relative z-10 bg-white/95 backdrop-blur-md rounded-2xl border-3 border-indigo-950 w-full max-w-xl p-2.5 sm:p-3.5 h-full max-h-full flex flex-col justify-between overflow-hidden">
+      <div className="relative z-10 bg-white/95 backdrop-blur-md rounded-2xl border-3 border-indigo-950 w-full max-w-xl p-2 sm:p-3.5 h-full max-h-full flex flex-col justify-between overflow-hidden">
         {isPlaying && matchup && (
-          <div className="flex flex-col h-full gap-2">
+          <div className="flex flex-col flex-1 min-h-0 h-full gap-1.5 sm:gap-2">
             <div className="flex items-center justify-between gap-2 shrink-0">
               <RoundPips total={HOME_RUN_ROUND_COUNT} outcomes={outcomes} activeRound={activeRound} />
               <SoundToggleButton />
@@ -91,7 +91,7 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
             <div className="shrink-0">
               <CountdownBar msLeft={game.msLeft} totalMs={state.timeLimitMs} />
             </div>
-            <div className="flex-1 min-h-0 relative">
+            <div className="flex-1 min-h-0 relative flex flex-col">
               <MatchupBoard
                 key={activeRound}
                 matchup={matchup}
@@ -103,6 +103,7 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
                 roundIndex={activeRound}
                 msLeft={game.msLeft}
                 timeLimitMs={state.timeLimitMs}
+                equippedBall={game.equippedBall}
                 onChoose={game.choose}
               />
             </div>
@@ -116,6 +117,13 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
             timeLimitMs={state.timeLimitMs}
             outcomes={outcomes}
             snoovatarUrl={state.snoovatarUrl}
+            userBases={game.userBases}
+            equippedBat={game.equippedBat}
+            ownedBats={game.ownedBats}
+            equippedBall={game.equippedBall}
+            ownedBalls={game.ownedBalls}
+            isDev={state.canReset}
+            onUpdateShopState={game.updateShopState}
             onPlay={() => void game.begin()}
           />
         )}
@@ -139,6 +147,13 @@ export const HomeRunGame = ({ state, onReset }: HomeRunGameProps) => {
             snoovatarUrl={state.snoovatarUrl}
             username={state.username}
             lifetimeStats={game.lifetimeStats ?? state.lifetimeStats}
+            userBases={game.userBases}
+            equippedBat={game.equippedBat}
+            ownedBats={game.ownedBats}
+            equippedBall={game.equippedBall}
+            ownedBalls={game.ownedBalls}
+            isDev={state.canReset}
+            onUpdateShopState={game.updateShopState}
             onTryAgain={game.tryAgain}
             onReset={state.canReset ? onReset : undefined}
           />

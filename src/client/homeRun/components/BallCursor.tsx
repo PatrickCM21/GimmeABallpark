@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import type { BallId } from '../../../shared/types/shop';
 import { BALL_SIZE_PX, FALL_MS, SERVE_MS, STRIKE_MS } from '../constants';
 import type { Point } from '../hooks/useArenaGeometry';
 import { HurlingBall } from './HurlingBall';
@@ -15,6 +16,8 @@ type BallCursorProps = {
   floorY: number;
   /** Horizontal drift when bouncing off the glass: -1 left, 1 right. */
   bounceDirection: -1 | 1;
+  /** Equipped custom ball skin. */
+  ballId?: BallId | string | undefined;
 };
 
 const BOUNCE_DRIFT_PX = 90;
@@ -25,7 +28,14 @@ const HALF = BALL_SIZE_PX / 2;
  * Always features moving downward wind lines streaming down from behind/around the ball,
  * conveying relentless forward propulsion toward the outfield.
  */
-export const BallCursor = ({ variant, position, launchFrom, floorY, bounceDirection }: BallCursorProps) => {
+export const BallCursor = ({
+  variant,
+  position,
+  launchFrom,
+  floorY,
+  bounceDirection,
+  ballId = 'default',
+}: BallCursorProps) => {
   if (variant === 'hidden') return null;
 
   const isLaunch = variant === 'launch';
@@ -84,6 +94,7 @@ export const BallCursor = ({ variant, position, launchFrom, floorY, bounceDirect
         >
           <div className={innerClass} style={smashVars}>
             <HurlingBall
+              ballId={ballId}
               size={BALL_SIZE_PX}
               showWind={showWind}
               intensity={intensity}

@@ -14,10 +14,12 @@ export type FlairSpec = {
   textColor: 'light' | 'dark';
 };
 
-/** One flair per game mode. */
+/** One flair per game mode / post type. */
 export const FLAIRS = {
   ballpark: { text: 'Daily Ballpark', backgroundColor: '#EAB308', textColor: 'dark' },
   homeRun: { text: 'Daily Home Run', backgroundColor: '#EF4444', textColor: 'light' },
+  communityBallpark: { text: 'Community Ballpark', backgroundColor: '#3B82F6', textColor: 'light' },
+  hub: { text: 'Game Hub', backgroundColor: '#6366F1', textColor: 'light' },
 } as const satisfies Record<string, FlairSpec>;
 
 export type ResolvedFlair = {

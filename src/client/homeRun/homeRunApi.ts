@@ -5,6 +5,12 @@ import type {
   HomeRunGameState,
   HomeRunPracticeAnswerResponse,
   HomeRunStartResponse,
+  ShopBuyRequest,
+  ShopBuyResponse,
+  ShopEquipRequest,
+  ShopEquipResponse,
+  BatId,
+  BallId,
 } from '../../shared/types/homeRun';
 import type { UserStatsResponse } from '../../shared/types/stats';
 import type { LeaderboardPeriod, LeaderboardResponse } from '../../shared/types/leaderboard';
@@ -39,4 +45,16 @@ export const homeRunApi = {
     requestJson<LeaderboardResponse>(
       `/api/leaderboard?period=${period}&page=${page}&pageSize=${pageSize}`
     ),
+  buyBat: (request: ShopBuyRequest) => postJson<ShopBuyResponse>('/api/home-run/shop/buy', request),
+  equipBat: (request: ShopEquipRequest) =>
+    postJson<ShopEquipResponse>('/api/home-run/shop/equip', request),
+  devAdjustBases: (body: { amount?: number; resetOwned?: boolean }) =>
+    postJson<{
+      success: boolean;
+      bases: number;
+      equippedBat: BatId;
+      ownedBats: BatId[];
+      equippedBall: BallId;
+      ownedBalls: BallId[];
+    }>('/api/home-run/shop/dev-bases', body),
 };

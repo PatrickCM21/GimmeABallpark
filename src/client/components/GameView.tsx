@@ -108,11 +108,11 @@ export const GameView = ({
         </div>
 
         <div className="flex flex-col items-end gap-1 shrink-0">
-          {showResults && (
+          {showResults && isResultsRevealed && (
             <button
               type="button"
               onClick={() => setShowStatsModal(true)}
-              className="text-[11px] sm:text-xs font-black uppercase tracking-wide bg-purple-100 hover:bg-purple-200 text-purple-700 border border-purple-300 px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1.5 transition-all shadow-xs active:scale-95 animate-fade-in"
+              className="text-[11px] sm:text-xs font-black uppercase tracking-wide bg-purple-100 hover:bg-purple-200 text-purple-700 border border-purple-300 px-2.5 py-1 rounded-lg cursor-pointer flex items-center gap-1.5 transition-all shadow-xs active:scale-95 animate-pop-bounce-delayed"
               title="View Lifetime Stats"
             >
               <span>📊</span>

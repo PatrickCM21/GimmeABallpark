@@ -1,9 +1,12 @@
 import { useId, type CSSProperties } from 'react';
+import type { BallId } from '../../../shared/types/shop';
 
 export type HurlingBallSpinMode = '2d' | '3d';
 
 export type HurlingBallProps = {
-  /** Diameter of the baseball in pixels (defaults to 36px). The wind overflows this box. */
+  /** Which ball skin to render: 'default' | 'tennis' | 'cricket' | 'golf'. Defaults to 'default'. */
+  ballId?: BallId | string | undefined;
+  /** Diameter of the ball in pixels (defaults to 36px). The wind overflows this box. */
   size?: number;
   /**
    * Direction (degrees) the wind trails towards. 0 = right, 90 = down (ball flying up), 180 = left, 270 = up.
@@ -11,6 +14,7 @@ export type HurlingBallProps = {
    */
   windAngle?: number;
   /** Show the wind arcs and streaks. Defaults to true. */
+  wind?: boolean;
   showWind?: boolean;
   /** 'intense' speeds everything up and thickens the wind (hits / strikes). */
   intensity?: 'normal' | 'intense';
@@ -18,9 +22,9 @@ export type HurlingBallProps = {
   spinning?: boolean;
   /**
    * How the spin is drawn:
-   * - '2d': standard 2D transform: rotate() around the center of the baseball.
-   * - '3d': SVG <clipPath> that translates the red stitched seams vertically to simulate a 3D forward-rolling spin.
-   * Defaults to '2d'.
+   * - '2d': standard 2D transform: rotate() around the center of the ball.
+   * - '3d': SVG <clipPath> that animates the interior surface details to simulate a 3D spin.
+   * Defaults to '3d'.
    */
   spinMode?: HurlingBallSpinMode;
   /** Subtle air-turbulence jitter. Defaults to true. */
@@ -36,8 +40,12 @@ export type HurlingBallProps = {
 const BALL_R = 20;
 const VIEW = { x: -42, y: -50, w: 84, h: 122 } as const;
 const BALL_D = BALL_R * 2;
-/** Vertical distance the 3D seam tile scrolls per loop (one full revolution). */
+/** Vertical distance the 3D baseball seam tile scrolls per loop (one full revolution). */
 const SEAM_TILE = 40;
+/** Vertical distance the cricket stitch belt scrolls per loop. */
+const CRICKET_TILE = 16;
+/** Vertical distance the golf dimple lattice scrolls per loop. */
+const GOLF_TILE = 36;
 
 type Pt = readonly [number, number];
 type Cubic = readonly [Pt, Pt, Pt, Pt];
@@ -87,7 +95,7 @@ const stitchesFor = ([p0, p1, p2, p3]: Cubic, count: number, len: number) => {
 };
 
 /**
- * Classic ")(" curved red stitched seams on left and right for 2D spin.
+ * Classic ")(" curved red stitched seams on left and right for 2D baseball spin.
  */
 const SEAMS_2D: readonly Cubic[] = [
   [[-14, -20], [-4.2, -9], [-4.2, 9], [-14, 20]],
@@ -95,13 +103,35 @@ const SEAMS_2D: readonly Cubic[] = [
 ];
 
 /**
- * Forward-rolling arched seams for 3D forward spin.
+ * Forward-rolling arched seams for 3D forward baseball spin.
  * Arches curve horizontally across the sphere and tile vertically every SEAM_TILE (40px)
  * creating the continuous illusion of a 3D baseball tumbling/rolling forward.
  */
 const SEAMS_3D_TILE: readonly Cubic[] = [
   [[-20, -18], [-8, -7], [8, -7], [20, -18]],
   [[-20, 18], [-8, 7], [8, 7], [20, 18]],
+];
+
+/**
+ * Classic tennis ball curved saddle seam for a single vertical tile (40px).
+ * Tiling this every 40px and scrolling along Y creates a smooth 3D forward-rolling
+ * tennis ball with its iconic opposing white rubber curves.
+ */
+const TENNIS_SEAMS_3D_TILE: readonly Cubic[] = [
+  [[-21, -17], [-9, -5.5], [9, -5.5], [21, -17]],
+  [[-21, 17], [-9, 5.5], [9, 5.5], [21, 17]],
+];
+
+/**
+ * Staggered honeycomb dimple rows within a single 36px vertical tile for the Golf Ball.
+ */
+const GOLF_DIMPLE_ROWS: readonly { y: number; xs: readonly number[]; r: number }[] = [
+  { y: -15, xs: [-13.5, -4.5, 4.5, 13.5], r: 2.15 },
+  { y: -9, xs: [-18, -9, 0, 9, 18], r: 2.25 },
+  { y: -3, xs: [-13.5, -4.5, 4.5, 13.5], r: 2.3 },
+  { y: 3, xs: [-18, -9, 0, 9, 18], r: 2.25 },
+  { y: 9, xs: [-13.5, -4.5, 4.5, 13.5], r: 2.2 },
+  { y: 15, xs: [-18, -9, 0, 9, 18], r: 2.15 },
 ];
 
 /** Layer 1: Top Wind Arcs (inner & outer dome arcs on left and right + vertical center line). */
@@ -140,17 +170,16 @@ const Seam = ({ curve }: { curve: Cubic }) => (
 );
 
 /**
- * Self-contained React component using inline SVG and CSS keyframes that recreates
- * and animates the baseball-with-wind graphic.
- *
- * Broken into three distinct layers inside a single SVG:
- * 1. Top Wind Arcs: Curved <path> elements above and around the top of the ball
- *    (inner & outer dome arcs on left and right, plus vertical center line) with a cyan/white outer glow.
- * 2. The Baseball: Circular baseball in the center with dark blue outline (#0F2B48),
- *    light blue shading, and two curved red stitched seams.
- * 3. Bottom Wind Streaks: Vertical <line> elements trailing off the bottom half of the ball.
+ * Self-contained React component using inline SVG and CSS keyframes that renders
+ * and animates the 4 unlockable balls ('default', 'tennis', 'cricket', 'golf') with
+ * identical wind layers and unique rotation looks per ball:
+ * - 'default' (Classic Baseball): 3D forward-tumbling curved red stitched seams.
+ * - 'tennis' (Tennis Ball): Optic yellow felt with smooth forward-rolling 3D white hourglass seams.
+ * - 'cricket' (Cricket Ball): Polished cherry leather with canted gyro-wobbling 6-row stitched equator seam.
+ * - 'golf' (Golf Ball): Pearlescent dimpled tour ball with smooth, unhurried 3D dimple roll.
  */
 export const HurlingBall = ({
+  ballId = 'default',
   size = 36,
   windAngle = 104,
   showWind = true,
@@ -166,6 +195,9 @@ export const HurlingBall = ({
     glow: `hb-glow-${uid}`,
     clip: `hb-clip-${uid}`,
     fill: `hb-fill-${uid}`,
+    tennisFill: `hb-tennis-fill-${uid}`,
+    cricketFill: `hb-cricket-fill-${uid}`,
+    golfFill: `hb-golf-fill-${uid}`,
     shade: `hb-shade-${uid}`,
   };
 
@@ -188,6 +220,356 @@ export const HurlingBall = ({
     animationIterationCount: 'infinite',
     animationDelay: `${-(delayFrac * windDurSec).toFixed(3)}s`,
   });
+
+  const renderBallInterior = () => {
+    if (ballId === 'tennis') {
+      // Slower, smooth forward-rolling 3D topspin
+      const tennisForwardDur = (spinDurSec * 1.65).toFixed(3);
+      return (
+        <g id="the-tennis-ball">
+          {/* Optic yellow-green felt base sphere */}
+          <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.tennisFill})`} />
+
+          {/* Lower-right felt shadow crescent */}
+          <path
+            d="M 11 -16 A 19 19 0 0 1 -15 12 A 17 17 0 0 0 11 -16 Z"
+            fill="#4D7C0F"
+            opacity={0.35}
+          />
+
+          {/* Clipped interior with forward-rolling 3D white rubber tennis seams */}
+          <g clipPath={`url(#${ids.clip})`}>
+            <g transform="rotate(-10)">
+              <g
+                style={
+                  spinning
+                    ? {
+                        animation: `hbSpin3dKeyframes ${tennisForwardDur}s linear infinite`,
+                      }
+                    : undefined
+                }
+              >
+                {[-SEAM_TILE, 0, SEAM_TILE].map((dy) =>
+                  TENNIS_SEAMS_3D_TILE.map((c, i) => {
+                    const d = cubicPath(shiftY(c, dy));
+                    return (
+                      <g key={`${dy}-${i}`}>
+                        {/* Recessed olive felt groove */}
+                        <path
+                          d={d}
+                          fill="none"
+                          stroke="#3F6212"
+                          strokeWidth={4.4}
+                          strokeLinecap="round"
+                        />
+                        {/* Classic thick white rubber tennis seam */}
+                        <path
+                          d={d}
+                          fill="none"
+                          stroke="#FFFFFF"
+                          strokeWidth={2.7}
+                          strokeLinecap="round"
+                        />
+                      </g>
+                    );
+                  })
+                )}
+              </g>
+            </g>
+
+            {/* Spherical depth shading over seams */}
+            <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.shade})`} />
+          </g>
+
+          {/* Dark outline */}
+          <circle cx="0" cy="0" r={BALL_R} fill="none" stroke="#1E1B4B" strokeWidth={2.5} />
+
+          {/* Soft fuzzy felt highlight */}
+          <ellipse
+            cx="-7"
+            cy="-9"
+            rx="4.6"
+            ry="2.4"
+            fill="#FEF9C3"
+            opacity={0.72}
+            transform="rotate(-30 -7 -9)"
+          />
+        </g>
+      );
+    }
+
+    if (ballId === 'cricket') {
+      const cricketSeamDur = (spinDurSec * 0.42).toFixed(3);
+      const cricketGyroDur = (spinDurSec * 0.72).toFixed(3);
+      return (
+        <g id="the-cricket-ball">
+          {/* Polished cherry-crimson leather sphere */}
+          <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.cricketFill})`} />
+
+          {/* Deep mahogany leather crescent shadow */}
+          <path
+            d="M 11 -16 A 19 19 0 0 1 -15 12 A 17 17 0 0 0 11 -16 Z"
+            fill="#450A0A"
+            opacity={0.45}
+          />
+
+          {/* Clipped interior with canted gyro-wobbling equatorial stitched seam belt */}
+          <g clipPath={`url(#${ids.clip})`}>
+            <g
+              style={
+                spinning
+                  ? {
+                      animation: `hbCricketGyroKeyframes ${cricketGyroDur}s ease-in-out infinite`,
+                    }
+                  : { transform: 'rotate(-22deg)' }
+              }
+            >
+              {/* Subtle perpendicular quarter-leather join lines */}
+              <path
+                d="M -22 0 Q 0 -4 22 0"
+                fill="none"
+                stroke="#7F1D1D"
+                strokeWidth={1.1}
+                opacity={0.65}
+              />
+
+              {/* Raised dark crimson leather seam belt backing */}
+              <rect x="-5.4" y="-26" width="10.8" height="52" fill="#7F1D1D" opacity={0.55} />
+              <line x1="-5.2" y1="-26" x2="-5.2" y2="26" stroke="#450A0A" strokeWidth={0.9} opacity={0.7} />
+              <line x1="5.2" y1="-26" x2="5.2" y2="26" stroke="#450A0A" strokeWidth={0.9} opacity={0.7} />
+
+              {/* Central equatorial split groove */}
+              <line x1="0" y1="-26" x2="0" y2="26" stroke="#2A0404" strokeWidth={1.4} />
+
+              {/* Rapidly scrolling 6-row white/cream stitched seam along the canted equator */}
+              <g
+                style={
+                  spinning
+                    ? {
+                        animation: `hbSpinCricketSeamKeyframes ${cricketSeamDur}s linear infinite`,
+                      }
+                    : undefined
+                }
+              >
+                {[-CRICKET_TILE * 2, -CRICKET_TILE, 0, CRICKET_TILE, CRICKET_TILE * 2].map((dy) => (
+                  <g key={dy} transform={`translate(0, ${dy})`}>
+                    {[0, 4, 8, 12].map((offset) => (
+                      <g key={offset} transform={`translate(0, ${offset - 6})`}>
+                        {/* Inner double stitch rows (angled herringbone / parallel ticks) */}
+                        <line
+                          x1="-2.2"
+                          y1="-1.2"
+                          x2="-1.2"
+                          y2="1.2"
+                          stroke="#FFFFFF"
+                          strokeWidth={1.35}
+                          strokeLinecap="round"
+                        />
+                        <line
+                          x1="2.2"
+                          y1="-1.2"
+                          x2="1.2"
+                          y2="1.2"
+                          stroke="#FFFFFF"
+                          strokeWidth={1.35}
+                          strokeLinecap="round"
+                        />
+                        {/* Outer stitch rows */}
+                        <line
+                          x1="-4.1"
+                          y1="-1.1"
+                          x2="-4.1"
+                          y2="1.1"
+                          stroke="#FEF08A"
+                          strokeWidth={1.15}
+                          strokeLinecap="round"
+                        />
+                        <line
+                          x1="4.1"
+                          y1="-1.1"
+                          x2="4.1"
+                          y2="1.1"
+                          stroke="#FEF08A"
+                          strokeWidth={1.15}
+                          strokeLinecap="round"
+                        />
+                      </g>
+                    ))}
+                  </g>
+                ))}
+              </g>
+            </g>
+
+            {/* Spherical depth shading */}
+            <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.shade})`} />
+          </g>
+
+          {/* Dark outline */}
+          <circle cx="0" cy="0" r={BALL_R} fill="none" stroke="#1E1B4B" strokeWidth={2.5} />
+
+          {/* High-gloss polished cherry leather shine */}
+          <ellipse
+            cx="-7.5"
+            cy="-9"
+            rx="5.2"
+            ry="2.8"
+            fill="#FFFFFF"
+            opacity={0.88}
+            transform="rotate(-30 -7.5 -9)"
+          />
+          <circle cx="-11" cy="-4.5" r="1.3" fill="#FECACA" opacity={0.8} />
+        </g>
+      );
+    }
+
+    if (ballId === 'golf') {
+      // Slower, smooth 3D dimple roll so individual dimples are clearly visible as it travels
+      const golfSpinDur = (spinDurSec * 1.75).toFixed(3);
+      return (
+        <g id="the-golf-ball">
+          {/* Pearlescent tour-white base sphere */}
+          <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.golfFill})`} />
+
+          {/* Cool slate crescent shading */}
+          <path
+            d="M 11 -16 A 19 19 0 0 1 -15 12 A 17 17 0 0 0 11 -16 Z"
+            fill="#94A3B8"
+            opacity={0.38}
+          />
+
+          {/* Clipped interior with slower, smooth-rolling 3D honeycomb dimple matrix */}
+          <g clipPath={`url(#${ids.clip})`}>
+            <g transform="rotate(-8)">
+              <g
+                style={
+                  spinning
+                    ? {
+                        animation: `hbSpinGolfDimplesKeyframes ${golfSpinDur}s linear infinite`,
+                      }
+                    : undefined
+                }
+              >
+                {[-GOLF_TILE, 0, GOLF_TILE].map((dy) => (
+                  <g key={dy} transform={`translate(0, ${dy})`}>
+                    {GOLF_DIMPLE_ROWS.map((row, rIdx) =>
+                      row.xs.map((x, cIdx) => (
+                        <g key={`${rIdx}-${cIdx}`} transform={`translate(${x}, ${row.y})`}>
+                          {/* Concave dimple shadow */}
+                          <circle cx="0" cy="0" r={row.r} fill="#CBD5E1" opacity={0.85} />
+                          {/* Upper-left recessed inner shadow arc */}
+                          <circle
+                            cx="-0.35"
+                            cy="-0.35"
+                            r={row.r * 0.78}
+                            fill="#94A3B8"
+                            opacity={0.55}
+                          />
+                          {/* Lower-right concave rim highlight */}
+                          <circle
+                            cx="0.45"
+                            cy="0.45"
+                            r={row.r * 0.65}
+                            fill="#FFFFFF"
+                            opacity={0.9}
+                          />
+                        </g>
+                      ))
+                    )}
+                  </g>
+                ))}
+              </g>
+            </g>
+
+            {/* Spherical depth shading over dimples */}
+            <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.shade})`} />
+          </g>
+
+          {/* Dark outline */}
+          <circle cx="0" cy="0" r={BALL_R} fill="none" stroke="#1E1B4B" strokeWidth={2.5} />
+
+          {/* Glossy urethane cover specular highlight */}
+          <ellipse
+            cx="-7"
+            cy="-9"
+            rx="4.8"
+            ry="2.6"
+            fill="#FFFFFF"
+            opacity={0.92}
+            transform="rotate(-30 -7 -9)"
+          />
+        </g>
+      );
+    }
+
+    // Default: Classic Baseball
+    return (
+      <g id="the-baseball">
+        {/* Baseball base sphere in clean white */}
+        <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.fill})`} />
+
+        {/* Subtle soft shading crescent inside lower-right of ball */}
+        <path
+          d="M 11 -16 A 19 19 0 0 1 -15 12 A 17 17 0 0 0 11 -16 Z"
+          fill="#CBD5E1"
+          opacity={0.35}
+        />
+
+        {/* Clipped interior with animated red stitched seams */}
+        <g clipPath={`url(#${ids.clip})`}>
+          {spinMode === '2d' ? (
+            <g
+              style={
+                spinning
+                  ? {
+                      transformBox: 'fill-box',
+                      transformOrigin: '50% 50%',
+                      animation: `hbSpin2dKeyframes ${spinDurSec}s linear infinite`,
+                    }
+                  : undefined
+              }
+            >
+              <circle cx="0" cy="0" r={BALL_R} fill="transparent" />
+              {SEAMS_2D.map((c, i) => (
+                <Seam key={i} curve={c} />
+              ))}
+            </g>
+          ) : (
+            <g
+              style={
+                spinning
+                  ? {
+                      animation: `hbSpin3dKeyframes ${spinDurSec}s linear infinite`,
+                    }
+                  : undefined
+              }
+            >
+              {/* Stacked vertical tiles of forward-rolling arched seams for seamless 3D forward tumble */}
+              {[-SEAM_TILE, 0, SEAM_TILE].map((dy) =>
+                SEAMS_3D_TILE.map((c, i) => <Seam key={`${dy}-${i}`} curve={shiftY(c, dy)} />)
+              )}
+            </g>
+          )}
+
+          {/* Spherical depth shading over seams */}
+          <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.shade})`} />
+        </g>
+
+        {/* Dark outline */}
+        <circle cx="0" cy="0" r={BALL_R} fill="none" stroke="#1E1B4B" strokeWidth={2.5} />
+
+        {/* Glossy top-left specular highlight */}
+        <ellipse
+          cx="-7"
+          cy="-9"
+          rx="4.8"
+          ry="2.6"
+          fill="#FFFFFF"
+          opacity={0.9}
+          transform="rotate(-30 -7 -9)"
+        />
+      </g>
+    );
+  };
 
   return (
     <div
@@ -224,6 +606,30 @@ export const HurlingBall = ({
         @keyframes hbSpin3dKeyframes {
           0% {
             transform: translateY(-${SEAM_TILE}px);
+          }
+          100% {
+            transform: translateY(0px);
+          }
+        }
+        @keyframes hbCricketGyroKeyframes {
+          0%, 100% {
+            transform: rotate(-27deg) translateX(-1.4px);
+          }
+          50% {
+            transform: rotate(-15deg) translateX(1.4px);
+          }
+        }
+        @keyframes hbSpinCricketSeamKeyframes {
+          0% {
+            transform: translateY(-${CRICKET_TILE}px);
+          }
+          100% {
+            transform: translateY(0px);
+          }
+        }
+        @keyframes hbSpinGolfDimplesKeyframes {
+          0% {
+            transform: translateY(-${GOLF_TILE}px);
           }
           100% {
             transform: translateY(0px);
@@ -281,13 +687,39 @@ export const HurlingBall = ({
             <stop offset="100%" stopColor="#E2E8F0" />
           </radialGradient>
 
+          {/* Optic yellow-green tennis ball felt shading */}
+          <radialGradient id={ids.tennisFill} cx="35%" cy="30%" r="72%">
+            <stop offset="0%" stopColor="#F0FF66" />
+            <stop offset="32%" stopColor="#D9F92D" />
+            <stop offset="70%" stopColor="#A3E635" />
+            <stop offset="92%" stopColor="#65A30D" />
+            <stop offset="100%" stopColor="#4D7C0F" />
+          </radialGradient>
+
+          {/* Polished cherry-red leather cricket ball shading */}
+          <radialGradient id={ids.cricketFill} cx="35%" cy="28%" r="74%">
+            <stop offset="0%" stopColor="#FCA5A5" />
+            <stop offset="28%" stopColor="#EF4444" />
+            <stop offset="68%" stopColor="#B91C1C" />
+            <stop offset="90%" stopColor="#7F1D1D" />
+            <stop offset="100%" stopColor="#450A0A" />
+          </radialGradient>
+
+          {/* Pearlescent dimpled tour golf ball shading */}
+          <radialGradient id={ids.golfFill} cx="34%" cy="28%" r="74%">
+            <stop offset="0%" stopColor="#FFFFFF" />
+            <stop offset="55%" stopColor="#F8FAFC" />
+            <stop offset="84%" stopColor="#E2E8F0" />
+            <stop offset="100%" stopColor="#CBD5E1" />
+          </radialGradient>
+
           {/* Subtle spherical rim shading */}
           <radialGradient id={ids.shade} cx="50%" cy="50%" r="50%">
             <stop offset="65%" stopColor="#1E1B4B" stopOpacity="0" />
-            <stop offset="100%" stopColor="#1E1B4B" stopOpacity="0.14" />
+            <stop offset="100%" stopColor="#1E1B4B" stopOpacity="0.16" />
           </radialGradient>
 
-          {/* Circular clipPath for the baseball interior and 3D seam translation */}
+          {/* Circular clipPath for the ball interior and 3D spin animations */}
           <clipPath id={ids.clip}>
             <circle cx="0" cy="0" r={BALL_R - 1} />
           </clipPath>
@@ -321,72 +753,8 @@ export const HurlingBall = ({
           </g>
         )}
 
-        {/* ========== LAYER 2: The Baseball ========== */}
-        <g id="the-baseball">
-          {/* Baseball base sphere in clean white */}
-          <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.fill})`} />
-
-          {/* Subtle soft shading crescent inside lower-right of ball */}
-          <path
-            d="M 11 -16 A 19 19 0 0 1 -15 12 A 17 17 0 0 0 11 -16 Z"
-            fill="#CBD5E1"
-            opacity={0.35}
-          />
-
-          {/* Clipped interior with animated red stitched seams */}
-          <g clipPath={`url(#${ids.clip})`}>
-            {spinMode === '2d' ? (
-              <g
-                style={
-                  spinning
-                    ? {
-                        transformBox: 'fill-box',
-                        transformOrigin: '50% 50%',
-                        animation: `hbSpin2dKeyframes ${spinDurSec}s linear infinite`,
-                      }
-                    : undefined
-                }
-              >
-                <circle cx="0" cy="0" r={BALL_R} fill="transparent" />
-                {SEAMS_2D.map((c, i) => (
-                  <Seam key={i} curve={c} />
-                ))}
-              </g>
-            ) : (
-              <g
-                style={
-                  spinning
-                    ? {
-                        animation: `hbSpin3dKeyframes ${spinDurSec}s linear infinite`,
-                      }
-                    : undefined
-                }
-              >
-                {/* Stacked vertical tiles of forward-rolling arched seams for seamless 3D forward tumble */}
-                {[-SEAM_TILE, 0, SEAM_TILE].map((dy) =>
-                  SEAMS_3D_TILE.map((c, i) => <Seam key={`${dy}-${i}`} curve={shiftY(c, dy)} />)
-                )}
-              </g>
-            )}
-
-            {/* Spherical depth shading over seams */}
-            <circle cx="0" cy="0" r={BALL_R} fill={`url(#${ids.shade})`} />
-          </g>
-
-          {/* Dark outline */}
-          <circle cx="0" cy="0" r={BALL_R} fill="none" stroke="#1E1B4B" strokeWidth={2.5} />
-
-          {/* Glossy top-left specular highlight */}
-          <ellipse
-            cx="-7"
-            cy="-9"
-            rx="4.8"
-            ry="2.6"
-            fill="#FFFFFF"
-            opacity={0.9}
-            transform="rotate(-30 -7 -9)"
-          />
-        </g>
+        {/* ========== LAYER 2: The Ball ========== */}
+        {renderBallInterior()}
 
         {/* ========== LAYER 1 (In Front): Top Wind Arcs ========== */}
         {showWind && (

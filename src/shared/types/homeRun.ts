@@ -1,4 +1,17 @@
 import type { UserLifetimeStats } from './stats';
+import type { BatId, BallId } from './shop';
+
+export type {
+  BatId,
+  BatItem,
+  BallId,
+  BallItem,
+  ShopCategory,
+  ShopBuyRequest,
+  ShopBuyResponse,
+  ShopEquipRequest,
+  ShopEquipResponse,
+} from './shop';
 
 /**
  * Shared types for the "Home Run" game mode (a fixed 4-step daily ladder).
@@ -91,6 +104,11 @@ export type HomeRunGameState = {
   audience?: HomeRunAudienceMember[] | undefined;
   canReset: boolean;
   lifetimeStats?: UserLifetimeStats | undefined;
+  userBases?: number | undefined;
+  equippedBat?: BatId | undefined;
+  ownedBats?: BatId[] | undefined;
+  equippedBall?: BallId | undefined;
+  ownedBalls?: BallId[] | undefined;
 };
 
 export type HomeRunExtrasResponse = {
@@ -98,6 +116,11 @@ export type HomeRunExtrasResponse = {
   audience?: HomeRunAudienceMember[] | undefined;
   stats: HomeRunRoundStat[];
   lifetimeStats?: UserLifetimeStats | undefined;
+  userBases?: number | undefined;
+  equippedBat?: BatId | undefined;
+  ownedBats?: BatId[] | undefined;
+  equippedBall?: BallId | undefined;
+  ownedBalls?: BallId[] | undefined;
 };
 
 export type HomeRunStartResponse = {
@@ -124,6 +147,7 @@ export type HomeRunAnswerResponse = {
   progress: HomeRunProgress;
   stats: HomeRunRoundStat[];
   lifetimeStats?: UserLifetimeStats | undefined;
+  userBases?: number | undefined;
 };
 
 export type HomeRunPracticeAnswerResponse = {

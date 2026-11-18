@@ -3,9 +3,14 @@
  * Uses real audio files from /public/sounds/.
  */
 
+import type { BatId } from '../../shared/types/shop';
+
 export type SoundName =
   | 'throw'
   | 'batHit'
+  | 'batHitMetal'
+  | 'batHitZombie'
+  | 'batHitInflatable'
   | 'crowdWow'
   | 'crowdAwh'
   | 'glassSmash'
@@ -19,6 +24,9 @@ export type SoundName =
 type InternalSoundKey =
   | 'throw'
   | 'batHit'
+  | 'batHitMetal'
+  | 'batHitZombie'
+  | 'batHitInflatable'
   | 'crowdWow1'
   | 'crowdWow2'
   | 'crowdWow3'
@@ -37,6 +45,9 @@ type InternalSoundKey =
 export const SOUND_URLS: Record<InternalSoundKey, string> = {
   throw: '/sounds/throw.mp3',
   batHit: '/sounds/bat_hit.mp3',
+  batHitMetal: '/sounds/bat_hit_metal.mp3',
+  batHitZombie: '/sounds/bat_hit_zombie.mp3',
+  batHitInflatable: '/sounds/bat_hit_inflatable.mp3',
   crowdWow1: '/sounds/crowd_wow.mp3',
   crowdWow2: '/sounds/crowd_wow_2.mp3',
   crowdWow3: '/sounds/crowd_wow_3.mp3',
@@ -69,6 +80,9 @@ const CROWD_AWH_KEYS: readonly InternalSoundKey[] = [
 const DEFAULT_VOLUMES: Record<SoundName, number> = {
   throw: 0.85,
   batHit: 2.4, // Boosted via Web Audio GainNode so bat hit is much louder
+  batHitMetal: 2.2,
+  batHitZombie: 2.3,
+  batHitInflatable: 1.8,
   crowdWow: 0.9,
   crowdAwh: 0.9,
   glassSmash: 0.95,
@@ -105,7 +119,13 @@ let lastWowIndex = -1;
 let lastAwhIndex = -1;
 let activeMusicHandle: SoundHandle | null = null;
 
-const INTRO_SOUND_KEYS: readonly InternalSoundKey[] = ['throw', 'batHit'];
+const INTRO_SOUND_KEYS: readonly InternalSoundKey[] = [
+  'throw',
+  'batHit',
+  'batHitMetal',
+  'batHitZombie',
+  'batHitInflatable',
+];
 const GAMEPLAY_SOUND_KEYS: readonly InternalSoundKey[] = [
   'gameMusic',
   'snooRun',
@@ -377,6 +397,23 @@ export const playSound = (name: SoundName, options?: PlaySoundOptions): SoundHan
   } catch {
     return NOOP_HANDLE;
   }
+};
+
+/** Plays the appropriate bat hit sound effect for the given batId. */
+export const playBatHitSound = (
+  batId?: BatId | string | undefined,
+  options?: PlaySoundOptions
+): SoundHandle => {
+  if (batId === 'metal') {
+    return playSound('batHitMetal', options);
+  }
+  if (batId === 'zombie_killer') {
+    return playSound('batHitZombie', options);
+  }
+  if (batId === 'inflatable') {
+    return playSound('batHitInflatable', options);
+  }
+  return playSound('batHit', options);
 };
 
 /** Starts the 10-second round thinking music (stopping any previous instance). */

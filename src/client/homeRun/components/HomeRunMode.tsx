@@ -51,6 +51,11 @@ export const HomeRunMode = ({ initialState }: HomeRunModeProps) => {
                 audience: prev.audience ?? extras.audience ?? [],
                 stats: prev.stats.length > 0 ? prev.stats : extras.stats,
                 lifetimeStats: prev.lifetimeStats ?? extras.lifetimeStats,
+                userBases: prev.userBases ?? extras.userBases,
+                equippedBat: prev.equippedBat ?? extras.equippedBat,
+                ownedBats: prev.ownedBats ?? extras.ownedBats,
+                equippedBall: prev.equippedBall ?? extras.equippedBall,
+                ownedBalls: prev.ownedBalls ?? extras.ownedBalls,
               }
             : prev
         );

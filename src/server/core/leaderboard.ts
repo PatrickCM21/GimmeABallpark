@@ -119,6 +119,8 @@ type SampleBatter = {
   allTimeScore: number;
   weeklyScore: number;
   snoovatarUrl: string;
+  equippedBat: string;
+  equippedBall: string;
 };
 
 const SAMPLE_BATTERS: readonly SampleBatter[] = [
@@ -127,36 +129,48 @@ const SAMPLE_BATTERS: readonly SampleBatter[] = [
     allTimeScore: 64,
     weeklyScore: 22,
     snoovatarUrl: 'https://www.redditstatic.com/avatars/defaults/v2/avatar_default_0.png',
+    equippedBat: 'inflatable',
+    equippedBall: 'golf',
   },
   {
     username: 'DerbyKing99',
     allTimeScore: 51,
     weeklyScore: 18,
     snoovatarUrl: 'https://www.redditstatic.com/avatars/defaults/v2/avatar_default_1.png',
+    equippedBat: 'zombie_killer',
+    equippedBall: 'cricket',
   },
   {
     username: 'GrandSlamGus',
     allTimeScore: 39,
     weeklyScore: 15,
     snoovatarUrl: 'https://www.redditstatic.com/avatars/defaults/v2/avatar_default_2.png',
+    equippedBat: 'metal',
+    equippedBall: 'tennis',
   },
   {
     username: 'FenceBuster',
     allTimeScore: 28,
     weeklyScore: 11,
     snoovatarUrl: 'https://www.redditstatic.com/avatars/defaults/v2/avatar_default_3.png',
+    equippedBat: 'metal',
+    equippedBall: 'tennis',
   },
   {
     username: 'LineDriveLou',
     allTimeScore: 17,
     weeklyScore: 7,
     snoovatarUrl: 'https://www.redditstatic.com/avatars/defaults/v2/avatar_default_4.png',
+    equippedBat: 'default',
+    equippedBall: 'default',
   },
   {
     username: 'RookieBatter',
     allTimeScore: 9,
     weeklyScore: 4,
     snoovatarUrl: 'https://www.redditstatic.com/avatars/defaults/v2/avatar_default_5.png',
+    equippedBat: 'default',
+    equippedBall: 'default',
   },
 ];
 
@@ -171,7 +185,11 @@ async function ensureSeededLeaderboard(key: string, period: LeaderboardPeriod): 
     const score = period === 'all_time' ? batter.allTimeScore : batter.weeklyScore;
     seedPromises.push(
       redis.zAdd(key, { member: batter.username, score }),
-      redis.set(`homerun:user:${batter.username}:snoovatar`, batter.snoovatarUrl)
+      redis.set(`homerun:user:${batter.username}:snoovatar`, batter.snoovatarUrl),
+      redis.set(`homerun:user:${batter.username}:equipped_bat`, batter.equippedBat),
+      redis.set(`homerun:user:${batter.username.toLowerCase()}:equipped_bat`, batter.equippedBat),
+      redis.set(`homerun:user:${batter.username}:equipped_ball`, batter.equippedBall),
+      redis.set(`homerun:user:${batter.username.toLowerCase()}:equipped_ball`, batter.equippedBall)
     );
     if (period === 'all_time') {
       seedPromises.push(
@@ -223,7 +241,13 @@ export async function getLeaderboard(
 
   const usernames = rawRange.map((item) => item.member);
   const snoovatarKeys = usernames.map((name) => `homerun:user:${name}:snoovatar`);
-  const cachedSnoovatars = snoovatarKeys.length > 0 ? await redis.mGet(snoovatarKeys) : [];
+  const batKeys = usernames.map((name) => `homerun:user:${name.trim().toLowerCase()}:equipped_bat`);
+  const ballKeys = usernames.map((name) => `homerun:user:${name.trim().toLowerCase()}:equipped_ball`);
+  const [cachedSnoovatars, cachedBats, cachedBalls] = await Promise.all([
+    snoovatarKeys.length > 0 ? redis.mGet(snoovatarKeys) : Promise.resolve([]),
+    batKeys.length > 0 ? redis.mGet(batKeys) : Promise.resolve([]),
+    ballKeys.length > 0 ? redis.mGet(ballKeys) : Promise.resolve([]),
+  ]);
 
   const resolvedSnoovatars = await Promise.all(
     usernames.map(async (name, i) => {
@@ -239,21 +263,26 @@ export async function getLeaderboard(
   for (let i = 0; i < rawRange.length; i++) {
     const raw = rawRange[i];
     if (!raw) continue;
+    const sampleBatter = SAMPLE_BATTERS.find((b) => b.username === raw.member);
     entries.push({
       rank: start + i + 1,
       username: raw.member,
       score: raw.score,
       snoovatarUrl: resolvedSnoovatars[i],
+      equippedBat: cachedBats[i] || sampleBatter?.equippedBat || 'default',
+      equippedBall: cachedBalls[i] || sampleBatter?.equippedBall || 'default',
       isCurrentUser: currentUsername ? raw.member === currentUsername : false,
     });
   }
 
   let currentUserEntry: LeaderboardEntry | undefined = undefined;
   if (currentUsername && currentUsername !== 'anonymous') {
-    const [userBottomRank, userScore, snooVal] = await Promise.all([
+    const [userBottomRank, userScore, snooVal, batVal, ballVal] = await Promise.all([
       redis.zRank(key, currentUsername),
       redis.zScore(key, currentUsername),
       redis.get(`homerun:user:${currentUsername}:snoovatar`),
+      redis.get(`homerun:user:${currentUsername.trim().toLowerCase()}:equipped_bat`),
+      redis.get(`homerun:user:${currentUsername.trim().toLowerCase()}:equipped_ball`),
     ]);
 
     let userSnoovatar = snooVal && snooVal !== 'none' && snooVal !== '' ? snooVal : undefined;
@@ -268,6 +297,8 @@ export async function getLeaderboard(
         username: currentUsername,
         score: userScore,
         snoovatarUrl: userSnoovatar,
+        equippedBat: batVal || 'default',
+        equippedBall: ballVal || 'default',
         isCurrentUser: true,
       };
     }
